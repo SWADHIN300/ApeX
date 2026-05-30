@@ -1,1 +1,1 @@
-export const APP_NAME = "Apex Protocol";
+export const APP_NAME = "ApeX";

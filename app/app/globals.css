@@ -1,6 +1,5 @@
 @import url("https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&display=swap");
 @import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap");
-@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap");
 @import "tailwindcss";
 
 /* ─── Light theme ─── */
@@ -151,13 +150,6 @@ html.dark .depth-bar-ask {
 }
 html.light .depth-bar-ask {
   background: rgba(192, 78, 34, 0.15);
-}
-
-/* ─── Material Symbols ─── */
-.material-symbols-outlined {
-  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
-  vertical-align: middle;
-  font-size: 18px;
 }
 
 /* ─── Typography presets ─── */

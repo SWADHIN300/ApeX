@@ -1,0 +1,6 @@
+- [x] Update SideNav to accept `isOpen` prop and render hidden/collapsed state
+- [x] Update AppShell to manage `isNavOpen` state and pass it to SideNav
+- [x] Add toggle button (hamburger) that shows/hides sidebar
+- [x] Adjust main content left margin when sidebar is hidden/open
+- [ ] Sanity check TypeScript/Next build
+- [ ] Verify UI behavior: hide sidebar, bring back, and hover "come up" expansion
