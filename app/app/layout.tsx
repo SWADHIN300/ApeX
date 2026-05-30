@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Apex Protocol",
-  description: "Apex Protocol trading interface",
+  title: "SOL-DEX | Perpetual Trading Terminal",
+  description: "Solana perpetual futures trading terminal",
 };
 
 export default function RootLayout({
@@ -12,8 +12,18 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full antialiased">
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <head>
+        {/* Apply saved theme before first paint to prevent flash */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem("sol-dex-theme");if(t==="light"||t==="dark")document.documentElement.className=t}catch(e){}})();`,
+          }}
+        />
+      </head>
+      <body className="h-screen overflow-hidden bg-bg-base text-text-main font-sans">
+        {children}
+      </body>
     </html>
   );
 }

@@ -1,26 +1,251 @@
+@import url("https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap");
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ─── Light theme ─── */
+html.light {
+  --bg-base: #f4f4f6;
+  --bg-surface: #ffffff;
+  --bg-l1: #eeedf2;
+  --bg-l2: #e4e3ec;
+  --bg-l3: #d8d7e4;
+  --bg-l4: #cccad8;
+  --border: #d0cfd8;
+  --border-soft: #b8b6c8;
+  --primary: #3f35a3;
+  --primary-container: #534ab7;
+  --long: #1a8f68;
+  --short: #c04e22;
+  --text-main: #1a1820;
+  --text-muted: #3e3c4d;
+  --text-dim: #6b6880;
+  --text-price: #006c4e;
+  --text-error: #93000a;
 }
 
+/* ─── Dark theme (default) ─── */
+html.dark {
+  --bg-base: #0d0d0f;
+  --bg-surface: #131315;
+  --bg-l1: #1b1b1d;
+  --bg-l2: #201f21;
+  --bg-l3: #2a2a2c;
+  --bg-l4: #353437;
+  --border: #262626;
+  --border-soft: #474553;
+  --primary: #c5c0ff;
+  --primary-container: #534ab7;
+  --long: #1d9e75;
+  --short: #d85a30;
+  --text-main: #e5e1e4;
+  --text-muted: #c8c4d5;
+  --text-dim: #928f9e;
+  --text-price: #68dbae;
+  --text-error: #ffb4ab;
+}
+
+/* ─── Tailwind v4 token mapping ─── */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: Arial, Helvetica, sans-serif;
-  --font-mono: "Courier New", Courier, monospace;
+  --color-bg-base: var(--bg-base);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-l1: var(--bg-l1);
+  --color-bg-l2: var(--bg-l2);
+  --color-bg-l3: var(--bg-l3);
+  --color-bg-l4: var(--bg-l4);
+  --color-t-border: var(--border);
+  --color-t-border-soft: var(--border-soft);
+  --color-primary: var(--primary);
+  --color-primary-ctr: var(--primary-container);
+  --color-long: var(--long);
+  --color-short: var(--short);
+  --color-text-main: var(--text-main);
+  --color-text-muted: var(--text-muted);
+  --color-text-dim: var(--text-dim);
+  --color-text-price: var(--text-price);
+  --color-text-error: var(--text-error);
+
+  --font-sans: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Sharp 90° corners everywhere */
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-4xl: 0px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* ─── Theme transition (smooth 0.2s on switch) ─── */
+* {
+  transition-property: background-color, border-color, color, fill, stroke;
+  transition-duration: 0.2s;
+  transition-timing-function: ease;
+}
+
+/* ─── Base ─── */
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+body {
+  background: var(--bg-base);
+  color: var(--text-main);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+input,
+button,
+select,
+textarea {
+  border-radius: 0;
+  font-family: inherit;
+}
+
+/* ─── Scrollbar ─── */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg-l4);
+}
+
+/* ─── 0.5px border utilities ─── */
+.b-thin {
+  border: 0.5px solid var(--border);
+}
+.bb-thin {
+  border-bottom: 0.5px solid var(--border);
+}
+.bt-thin {
+  border-top: 0.5px solid var(--border);
+}
+.br-thin {
+  border-right: 0.5px solid var(--border);
+}
+.bl-thin {
+  border-left: 0.5px solid var(--border);
+}
+
+/* ─── Depth bars ─── */
+html.dark .depth-bar-bid {
+  background: rgba(29, 158, 117, 0.15);
+}
+html.light .depth-bar-bid {
+  background: rgba(26, 143, 104, 0.15);
+}
+html.dark .depth-bar-ask {
+  background: rgba(216, 90, 48, 0.15);
+}
+html.light .depth-bar-ask {
+  background: rgba(192, 78, 34, 0.15);
+}
+
+/* ─── Material Symbols ─── */
+.material-symbols-outlined {
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+  vertical-align: middle;
+  font-size: 18px;
+}
+
+/* ─── Typography presets ─── */
+.t-display-lg {
+  font-family: var(--font-sans);
+  font-size: 32px;
+  line-height: 40px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.t-headline-md {
+  font-family: var(--font-sans);
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+}
+.t-body-md {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+}
+.t-body-sm {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 400;
+}
+.t-label-caps {
+  font-family: var(--font-sans);
+  font-size: 10px;
+  line-height: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.t-data-lg {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 500;
+}
+.t-data-md {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+}
+.t-data-sm {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 400;
+}
+
+/* ─── Price flash animations ─── */
+@keyframes flash-up {
+  0% {
+    color: var(--long);
+  }
+  100% {
+    color: var(--text-price);
   }
 }
+@keyframes flash-down {
+  0% {
+    color: var(--short);
+  }
+  100% {
+    color: var(--text-main);
+  }
+}
+.flash-up {
+  animation: flash-up 0.3s ease forwards;
+}
+.flash-down {
+  animation: flash-down 0.3s ease forwards;
+}
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ─── Order book row fade-in ─── */
+@keyframes row-fade {
+  0% {
+    opacity: 0.3;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+.row-flash {
+  animation: row-fade 0.3s ease;
 }

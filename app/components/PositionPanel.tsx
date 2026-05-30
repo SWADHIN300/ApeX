@@ -1,3 +1,136 @@
+"use client";
+
+import { useState } from "react";
+
+type Tab = "Positions" | "Open Orders" | "History" | "Trade Logs";
+
+interface Position {
+  pair: string;
+  side: string;
+  leverage: string;
+  size: string;
+  entryPrice: string;
+  markPrice: string;
+  liqPrice: string;
+  pnl: string;
+  pnlPct: string;
+  positive: boolean;
+}
+
+const positions: Position[] = [
+  {
+    pair: "BTC-PERP",
+    side: "Long",
+    leverage: "10x",
+    size: "0.500 BTC",
+    entryPrice: "$64,000.00",
+    markPrice: "$65,432.10",
+    liqPrice: "$57,600.00",
+    pnl: "+$716.05",
+    pnlPct: "(+12.50%)",
+    positive: true,
+  },
+];
+
+const tabs: Tab[] = ["Positions", "Open Orders", "History", "Trade Logs"];
+
 export default function PositionPanel() {
-  return null;
+  const [activeTab, setActiveTab] = useState<Tab>("Positions");
+
+  return (
+    <section className="col-span-12 h-64 bt-thin bg-bg-l1">
+      {/* Tab row */}
+      <div className="h-10 bb-thin flex items-center px-4 gap-6">
+        {tabs.map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`t-label-caps h-full px-2 transition-colors ${
+              activeTab === tab
+                ? "text-text-main border-b-2 border-primary"
+                : "text-text-muted hover:text-text-main"
+            }`}
+          >
+            {tab}
+            {tab === "Positions" && ` (${positions.length})`}
+            {tab === "Open Orders" && " (0)"}
+          </button>
+        ))}
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto no-scrollbar">
+        <table className="w-full text-left">
+          <thead className="bg-bg-l2 bb-thin">
+            <tr>
+              {[
+                "Position",
+                "Size",
+                "Entry Price",
+                "Mark Price",
+                "Liq. Price",
+                "PnL (ROI%)",
+              ].map((col) => (
+                <th
+                  key={col}
+                  className="px-4 py-2 t-label-caps text-text-muted"
+                >
+                  {col}
+                </th>
+              ))}
+              <th className="px-4 py-2 t-label-caps text-text-muted text-right">
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {positions.map((pos, i) => (
+              <tr key={i} className="hover:bg-bg-l2 transition-colors bb-thin">
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-long" />
+                    <span className="t-data-md text-text-main">{pos.pair}</span>
+                    <span
+                      className="t-label-caps px-1 text-long"
+                      style={{ background: "rgba(29,158,117,0.1)" }}
+                    >
+                      {pos.side} {pos.leverage}
+                    </span>
+                  </div>
+                </td>
+                <td className="px-4 py-3 t-data-md text-text-main">
+                  {pos.size}
+                </td>
+                <td className="px-4 py-3 t-data-md text-text-muted">
+                  {pos.entryPrice}
+                </td>
+                <td className="px-4 py-3 t-data-md text-text-muted">
+                  {pos.markPrice}
+                </td>
+                <td className="px-4 py-3 t-data-md text-text-error">
+                  {pos.liqPrice}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-col">
+                    <span className="t-data-md text-long">{pos.pnl}</span>
+                    <span className="t-data-sm text-long">{pos.pnlPct}</span>
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <div className="flex justify-end gap-2">
+                    <button className="px-3 py-1 bg-bg-l3 border border-t-border-soft t-label-caps text-text-muted hover:bg-bg-l4">
+                      TP/SL
+                    </button>
+                    <button className="px-3 py-1 bg-bg-l3 border border-t-border-soft t-label-caps text-text-muted hover:bg-text-error/20 hover:text-text-error transition-all">
+                      Close
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
 }
