@@ -1,0 +1,11 @@
+pub const MAX_LEVERAGE: u8 = 10;
+pub const MIN_LEVERAGE: u8 = 1;
+pub const MAINTENANCE_MARGIN: u64 = 500;
+pub const LIQUIDATION_FEE: u64 = 50;
+pub const FUNDING_INTERVAL: i64 = 28_800;
+pub const ORACLE_STALENESS: u64 = 60;
+pub const MAX_ORDERS: usize = 500;
+pub const FEE_DENOMINATOR: u64 = 10_000;
+pub const PRICE_DECIMALS: u64 = 1_000_000;
+pub const MAX_CONFIDENCE_BPS: u64 = 100;
+pub const BASE_FUNDING_RATE: i64 = 10;

@@ -91,16 +91,13 @@ export default function CandlestickChart() {
               fontFamily: "JetBrains Mono",
             }}
           >
-            {p.toLocaleString()}
+            {p.toLocaleString("en-US")}
           </text>
         </g>
       ))}
 
       {/* Area fill under close line */}
-      <path
-        d={areaPath}
-        style={{ fill: "var(--long)", fillOpacity: 0.08 }}
-      />
+      <path d={areaPath} style={{ fill: "var(--long)", fillOpacity: 0.08 }} />
 
       {/* Close line */}
       <path
@@ -174,7 +171,7 @@ export default function CandlestickChart() {
           fontWeight: 500,
         }}
       >
-        {MARK_PRICE.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+        {MARK_PRICE.toLocaleString("en-US", { minimumFractionDigits: 2 })}
       </text>
     </svg>
   );

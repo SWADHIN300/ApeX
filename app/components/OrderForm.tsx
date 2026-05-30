@@ -16,7 +16,7 @@ export default function OrderForm() {
   const orderTypes: OrderType[] = ["Market", "Limit", "Stop"];
 
   return (
-    <section className="col-span-12 lg:col-span-3 b-thin border-l-0 flex flex-col bg-bg-surface p-4">
+    <section className="col-span-12 lg:col-span-3 min-h-0 min-w-0 b-thin lg:border-l-0 flex flex-col bg-bg-surface p-4 overflow-y-auto no-scrollbar">
       {/* Long / Short toggle */}
       <div className="flex bg-bg-l1 p-0.5 gap-1 mb-6">
         <button
@@ -60,9 +60,9 @@ export default function OrderForm() {
 
       {/* Size input */}
       <div className="mb-4">
-        <div className="flex justify-between mb-1">
-          <span className="t-label-caps text-text-muted">Size</span>
-          <span className="t-label-caps text-text-muted">
+        <div className="flex justify-between gap-3 mb-1">
+          <span className="t-label-caps text-text-muted shrink-0">Size</span>
+          <span className="t-label-caps text-text-muted truncate">
             Avail: 12,450.00 USDC
           </span>
         </div>

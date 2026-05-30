@@ -28,7 +28,7 @@ export default function Footer() {
             Keeper Bot: Active
           </span>
         </div>
-        <span className="text-label-sm text-outline">© 2025 Apex Protocol</span>
+        <span className="text-label-sm text-outline">© 2025 ApeX</span>
       </div>
     </footer>
   );

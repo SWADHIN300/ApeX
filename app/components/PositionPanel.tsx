@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 
 type Tab = "Positions" | "Open Orders" | "History" | "Trade Logs";
 
@@ -34,33 +35,58 @@ const positions: Position[] = [
 
 const tabs: Tab[] = ["Positions", "Open Orders", "History", "Trade Logs"];
 
-export default function PositionPanel() {
+export default function PositionPanel({
+  isOpen = true,
+  onToggle,
+}: {
+  isOpen?: boolean;
+  onToggle?: () => void;
+}) {
   const [activeTab, setActiveTab] = useState<Tab>("Positions");
 
   return (
-    <section className="col-span-12 h-64 bt-thin bg-bg-l1">
+    <section
+      className={`col-span-12 min-h-0 min-w-0 b-thin border-t-0 bg-bg-l1 overflow-hidden transition-[height] duration-300 ${
+        isOpen ? "h-64" : "h-11"
+      }`}
+    >
       {/* Tab row */}
-      <div className="h-10 bb-thin flex items-center px-4 gap-6">
-        {tabs.map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`t-label-caps h-full px-2 transition-colors ${
-              activeTab === tab
-                ? "text-text-main border-b-2 border-primary"
-                : "text-text-muted hover:text-text-main"
-            }`}
-          >
-            {tab}
-            {tab === "Positions" && ` (${positions.length})`}
-            {tab === "Open Orders" && " (0)"}
-          </button>
-        ))}
+      <div className="h-11 bb-thin flex items-center justify-between gap-3 px-4">
+        <div className="flex h-full min-w-0 items-center gap-6 overflow-x-auto no-scrollbar">
+          {tabs.map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`t-label-caps h-full shrink-0 px-2 transition-colors ${
+                activeTab === tab
+                  ? "text-text-main border-b-2 border-primary"
+                  : "text-text-muted hover:text-text-main"
+              }`}
+            >
+              {tab}
+              {tab === "Positions" && ` (${positions.length})`}
+              {tab === "Open Orders" && " (0)"}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={onToggle}
+          className="h-8 w-8 flex shrink-0 items-center justify-center b-thin bg-bg-l1 text-text-muted hover:bg-bg-l4 hover:text-text-main"
+          aria-label={isOpen ? "Hide positions panel" : "Show positions panel"}
+          title={isOpen ? "Hide positions panel" : "Show positions panel"}
+          type="button"
+        >
+          {isOpen ? <ChevronDown size={17} /> : <ChevronUp size={17} />}
+        </button>
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto no-scrollbar">
-        <table className="w-full text-left">
+      <div
+        className={`overflow-x-auto no-scrollbar transition-opacity duration-200 ${
+          isOpen ? "opacity-100" : "pointer-events-none opacity-0"
+        }`}
+      >
+        <table className="w-full min-w-[760px] text-left">
           <thead className="bg-bg-l2 bb-thin">
             <tr>
               {[
