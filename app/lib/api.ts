@@ -1,29 +1,11 @@
 import { Candle, Ticker, OrderBookLevel } from "./types";
 
-const BINANCE_REST_URL = "https://api.binance.com/api/v3";
-const BINANCE_WS_URL = "wss://stream.binance.com:9443/ws";
+const BINANCE_REST_URL = "https://data-api.binance.vision/api/v3";
+const BINANCE_WS_URL = "wss://data-stream.binance.vision:9443/ws";
 
-// Mapping ApeX pairs to Binance symbols
-export const PAIR_TO_SYMBOL: Record<string, string> = {
-  "BTC-PERP": "BTCUSDT",
-  "ETH-PERP": "ETHUSDT",
-  "SOL-PERP": "SOLUSDT",
-  "BNB-PERP": "BNBUSDT",
-  "ARB-PERP": "ARBUSDT",
-  "OP-PERP": "OPUSDT",
-  "AVAX-PERP": "AVAXUSDT",
-  "LINK-PERP": "LINKUSDT",
-  "INJ-PERP": "INJUSDT",
-  "JTO-PERP": "JTOUSDT",
-};
-
-export const SYMBOL_TO_PAIR = Object.entries(PAIR_TO_SYMBOL).reduce(
-  (acc, [pair, symbol]) => {
-    acc[symbol] = pair;
-    return acc;
-  },
-  {} as Record<string, string>
-);
+// Utility functions to convert between ApeX pair and Binance symbol
+export const getBinanceSymbol = (pair: string) => pair.replace("-PERP", "USDT");
+export const getApexPair = (symbol: string) => symbol.replace("USDT", "-PERP");
 
 const formatVolume = (vol: number) => {
   if (vol >= 1e9) return (vol / 1e9).toFixed(2) + "B";
@@ -39,18 +21,16 @@ export async function fetchAllTickers(): Promise<Ticker[]> {
     
     if (!Array.isArray(data)) return [];
 
-    const supportedSymbols = new Set(Object.values(PAIR_TO_SYMBOL));
-    const filtered = data.filter((d: any) => supportedSymbols.has(d.symbol));
+    const filtered = data.filter((d: any) => d.symbol.endsWith("USDT"));
 
     return filtered.map((d: any) => {
       const price = parseFloat(d.lastPrice);
-      const prevClose = parseFloat(d.prevClosePrice);
-      const change24h = ((price - prevClose) / prevClose) * 100;
+      const change24h = parseFloat(d.priceChangePercent) || 0;
       // using quote volume (USDT)
       const volume24h = formatVolume(parseFloat(d.quoteVolume)); 
       
       return {
-        symbol: SYMBOL_TO_PAIR[d.symbol],
+        symbol: getApexPair(d.symbol),
         price,
         change24h,
         volume24h,
@@ -69,7 +49,7 @@ export async function fetchKlines(
   interval: string,
   limit: number = 100
 ): Promise<Candle[]> {
-  const symbol = PAIR_TO_SYMBOL[pair];
+  const symbol = getBinanceSymbol(pair);
   if (!symbol) return [];
 
   try {
@@ -86,6 +66,7 @@ export async function fetchKlines(
       high: parseFloat(d[2]),
       low: parseFloat(d[3]),
       close: parseFloat(d[4]),
+      volume: parseFloat(d[5]), // base asset volume
     }));
   } catch (error) {
     console.error(`Failed to fetch klines for ${pair}:`, error);
@@ -94,7 +75,7 @@ export async function fetchKlines(
 }
 
 export async function fetchOrderBook(pair: string, limit: number = 20): Promise<{ bids: OrderBookLevel[], asks: OrderBookLevel[] }> {
-    const symbol = PAIR_TO_SYMBOL[pair];
+    const symbol = getBinanceSymbol(pair);
     if (!symbol) return { bids: [], asks: [] };
 
     try {
@@ -115,7 +96,7 @@ export function subscribeTicker(
   pair: string,
   callback: (ticker: Ticker) => void
 ): () => void {
-  const symbol = PAIR_TO_SYMBOL[pair];
+  const symbol = getBinanceSymbol(pair);
   if (!symbol) return () => {};
 
   const ws = new WebSocket(`${BINANCE_WS_URL}/${symbol.toLowerCase()}@ticker`);
@@ -145,7 +126,7 @@ export function subscribeKlines(
   interval: string,
   callback: (candle: Candle) => void
 ): () => void {
-  const symbol = PAIR_TO_SYMBOL[pair];
+  const symbol = getBinanceSymbol(pair);
   if (!symbol) return () => {};
 
   const ws = new WebSocket(
@@ -162,6 +143,7 @@ export function subscribeKlines(
       high: parseFloat(data.k.h),
       low: parseFloat(data.k.l),
       close: parseFloat(data.k.c),
+      volume: parseFloat(data.k.v),
     });
   };
 
@@ -172,7 +154,7 @@ export function subscribeOrderBook(
   pair: string,
   callback: (data: { bids: OrderBookLevel[], asks: OrderBookLevel[] }) => void
 ): () => void {
-  const symbol = PAIR_TO_SYMBOL[pair];
+  const symbol = getBinanceSymbol(pair);
   if (!symbol) return () => {};
 
   const ws = new WebSocket(

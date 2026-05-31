@@ -1,7 +1,7 @@
 "use client";
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { Ticker } from "@/lib/types";
-import { fetchAllTickers, subscribeTicker, PAIR_TO_SYMBOL } from "@/lib/api";
+import { fetchAllTickers, subscribeTicker } from "@/lib/api";
 
 type MarketContextType = {
   market: Ticker;
@@ -31,13 +31,41 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let mounted = true;
     const init = async () => {
+      // 1. Try to load from cache instantly for zero-latency startup
+      try {
+        const cached = localStorage.getItem("apex_tickers_cache");
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed && parsed.length > 0) {
+            setMarkets(parsed);
+            if (market.symbol === "BTC-PERP") {
+              const btc = parsed.find((m: Ticker) => m.symbol === "BTC-PERP") || parsed[0];
+              setMarket(btc);
+            }
+            setIsLoading(false);
+          }
+        }
+      } catch (e) {
+        // Ignore cache errors
+      }
+
+      // 2. Fetch fresh data in the background
       const data = await fetchAllTickers();
       if (!mounted) return;
       if (data && data.length > 0) {
         setMarkets(data);
-        // Find BTC-PERP or use the first available
-        const btc = data.find((m) => m.symbol === "BTC-PERP") || data[0];
-        setMarket(btc);
+        // Only update active market if it's still the fallback
+        setMarket((prev) => {
+          if (prev.symbol === "BTC-PERP") {
+            return data.find((m) => m.symbol === "BTC-PERP") || data[0];
+          }
+          return prev;
+        });
+        
+        // Save to cache for next time (limit array to save quota, first 300 is enough)
+        try {
+          localStorage.setItem("apex_tickers_cache", JSON.stringify(data.slice(0, 300)));
+        } catch (e) {}
       }
       setIsLoading(false);
     };

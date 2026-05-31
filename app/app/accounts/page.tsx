@@ -13,9 +13,14 @@ export default function AccountsPage() {
 
   useEffect(() => {
     if (publicKey) {
-      connection.getBalance(publicKey).then((bal) => {
-        setSolBalance(bal / 1e9)
-      })
+      connection.getBalance(publicKey)
+        .then((bal) => {
+          setSolBalance(bal / 1e9)
+        })
+        .catch(err => {
+          console.error("Failed to fetch balance:", err);
+          setSolBalance(0);
+        })
     } else {
       setSolBalance(0)
     }

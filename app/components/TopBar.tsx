@@ -8,6 +8,7 @@ import { useMarket } from "@/contexts/MarketContext";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useNetwork } from "@/contexts/WalletProvider";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import MarketSearchModal from "./MarketSearchModal";
 import {
   Bell,
   PanelLeftClose,
@@ -27,11 +28,29 @@ export default function TopBar({
   const [price, setPrice] = useState(market?.price || 0);
   const [flashClass, setFlashClass] = useState("");
   const prevRef = useRef(market?.price || 0);
-  const flashKey = useRef(0);
+  const [flashKey, setFlashKey] = useState(0);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [showSearchModal, setShowSearchModal] = useState(false);
   const { network, setNetwork } = useNetwork();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Ctrl+K / Cmd+K opens market search
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        setShowSearchModal((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   useEffect(() => {
     if (!market) return;
@@ -46,7 +65,7 @@ export default function TopBar({
       const next = +(prevRef.current + delta).toFixed(2);
       prevRef.current = next;
       setPrice(next);
-      flashKey.current += 1;
+      setFlashKey((k) => k + 1);
       setFlashClass(delta >= 0 ? "flash-up" : "flash-down");
       setTimeout(() => setFlashClass(""), 300);
     }, 2500);
@@ -61,7 +80,8 @@ export default function TopBar({
   );
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-bg-l1 bb-thin grid grid-cols-[4rem_minmax(0,1fr)_auto] items-center">
+    <>
+      <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-bg-l1 bb-thin grid grid-cols-[4rem_minmax(0,1fr)_auto] items-center">
       <Link
         href="/"
         className="flex h-14 w-16 shrink-0 flex-col items-center justify-center gap-0.5 select-none br-thin"
@@ -95,6 +115,18 @@ export default function TopBar({
           ) : (
             <PanelLeftOpen size={18} />
           )}
+        </button>
+        {/* Dedicated Search Button */}
+        <button
+          onClick={() => setShowSearchModal(true)}
+          className="flex items-center gap-2 h-[34px] px-3 shrink-0 b-thin bg-bg-l2 text-text-muted hover:bg-bg-l4 hover:text-text-main cursor-pointer transition-colors"
+          aria-label="Search all markets"
+          title="Search all markets (Ctrl+K)"
+          type="button"
+        >
+          <Search size={14} />
+          <span className="t-label-caps hidden lg:block" style={{ fontSize: "11px" }}>Search markets</span>
+          <kbd className="hidden xl:block text-[9px] text-text-dim border border-t-border px-1 py-0.5 ml-1">⌘K</kbd>
         </button>
         <nav className="hidden md:flex shrink-0 items-center gap-4">
           <Link
@@ -160,7 +192,7 @@ export default function TopBar({
           <div className="flex min-w-24 flex-col">
             <span className="t-label-caps text-text-muted">{market?.symbol || "Market"}</span>
             <span
-              key={flashKey.current}
+              key={flashKey}
               className={`t-data-md text-text-price ${flashClass}`}
             >
               ${fmt(price)}
@@ -212,16 +244,26 @@ export default function TopBar({
           <Settings size={17} />
         </Link>
         <div className="hidden sm:flex items-center gap-2 ml-2">
-          <button
-            onClick={() => setNetwork(network === "devnet" ? "mainnet-beta" : "devnet")}
-            className="h-8 px-3 flex items-center justify-center border border-t-border hover:bg-bg-l4 t-label-caps text-text-main transition-colors capitalize"
-            style={{ fontSize: "11px" }}
-          >
-            {network.replace("-beta", "")}
-          </button>
-          <WalletMultiButton style={{ height: "32px", fontSize: "12px", background: "var(--primary-container)", borderRadius: "0px", fontFamily: "var(--font-sans)", textTransform: "uppercase", fontWeight: 700, padding: "0 16px" }} />
+          {mounted && (
+            <>
+              <button
+                onClick={() => setNetwork(network === "devnet" ? "mainnet-beta" : "devnet")}
+                className="h-8 px-3 flex items-center justify-center border border-t-border hover:bg-bg-l4 t-label-caps text-text-main transition-colors capitalize"
+                style={{ fontSize: "11px" }}
+              >
+                {network.replace("-beta", "")}
+              </button>
+              <WalletMultiButton style={{ height: "32px", fontSize: "12px", background: "var(--primary-container)", borderRadius: "0px", fontFamily: "var(--font-sans)", textTransform: "uppercase", fontWeight: 700, padding: "0 16px" }} />
+            </>
+          )}
         </div>
       </div>
     </header>
+
+    {/* Market Search Modal */}
+      {showSearchModal && (
+        <MarketSearchModal onClose={() => setShowSearchModal(false)} />
+      )}
+    </>
   );
 }

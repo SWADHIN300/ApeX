@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import AppShell from "@/components/layout/AppShell";
 import { useSettings } from "@/contexts/SettingsContext";
 import {
@@ -19,6 +19,16 @@ import {
 type SettingsTab = "general" | "trading" | "notifications" | "security";
 type ThemeChoice = "dark" | "light" | "system";
 
+type SelectOption = { value: string; label: string };
+
+function getOptionLabel(
+  options: SelectOption[],
+  value: string,
+  fallback: string,
+) {
+  return options.find((option) => option.value === value)?.label ?? fallback;
+}
+
 function getSystemTheme() {
   return window.matchMedia("(prefers-color-scheme: dark)").matches
     ? "dark"
@@ -37,6 +47,49 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
   const { settings, updateSettings } = useSettings();
   const [saved, setSaved] = useState(false);
+  const [showLanguageOptions, setShowLanguageOptions] = useState(false);
+  const [showCurrencyOptions, setShowCurrencyOptions] = useState(false);
+  const [languageOptions, setLanguageOptions] = useState<SelectOption[]>([]);
+  const [currencyOptions, setCurrencyOptions] = useState<SelectOption[]>([]);
+  const [cryptoCurrencyOptions, setCryptoCurrencyOptions] = useState<
+    SelectOption[]
+  >([]);
+  const localizationOptionsLoaded = useRef(false);
+
+  const loadLocalizationOptions = async () => {
+    if (localizationOptionsLoaded.current) return;
+    localizationOptionsLoaded.current = true;
+
+    try {
+      const options = await import("@/lib/localizationOptions");
+      setLanguageOptions(options.languages);
+      setCurrencyOptions(options.currencies);
+      setCryptoCurrencyOptions(options.cryptoCurrencies);
+    } catch {
+      localizationOptionsLoaded.current = false;
+    }
+  };
+
+  const openLanguageOptions = () => {
+    setShowLanguageOptions(true);
+    void loadLocalizationOptions();
+  };
+
+  const openCurrencyOptions = () => {
+    setShowCurrencyOptions(true);
+    void loadLocalizationOptions();
+  };
+
+  const selectedLanguageLabel = getOptionLabel(
+    languageOptions,
+    settings.language,
+    settings.language === "en" ? "English (US)" : settings.language.toUpperCase(),
+  );
+  const selectedCurrencyLabel = getOptionLabel(
+    [...currencyOptions, ...cryptoCurrencyOptions],
+    settings.currency,
+    settings.currency === "USD" ? "US Dollar (USD, $)" : settings.currency,
+  );
 
   useEffect(() => {
     const savedTheme = localStorage.getItem("sol-dex-theme");
@@ -171,15 +224,33 @@ export default function SettingsPage() {
                       </label>
                       <select
                         value={settings.language}
+                        onFocus={openLanguageOptions}
+                        onMouseEnter={() => void loadLocalizationOptions()}
+                        onMouseDown={openLanguageOptions}
+                        onKeyDown={openLanguageOptions}
                         onChange={(e) =>
                           updateSettings({ language: e.target.value })
                         }
-                        className="w-full bg-surface-low border border-outline-variant p-3 font-ui text-body-sm text-on-surface focus:border-primary outline-none"
+                        className="w-full bg-bg-l2 border border-t-border p-3 font-ui text-body-sm text-text-main focus:border-primary outline-none"
                       >
-                        <option value="en">English (US)</option>
-                        <option value="es">Español</option>
-                        <option value="ja">日本語</option>
-                        <option value="ko">한국어</option>
+                        {showLanguageOptions ? (
+                          languageOptions.map((language) => (
+                            <option
+                              key={language.value}
+                              value={language.value}
+                              className="bg-bg-l2 text-text-main"
+                            >
+                              {language.label}
+                            </option>
+                          ))
+                        ) : (
+                          <option
+                            value={settings.language}
+                            className="bg-bg-l2 text-text-main"
+                          >
+                            {selectedLanguageLabel}
+                          </option>
+                        )}
                       </select>
                     </div>
                     <div>
@@ -188,21 +259,49 @@ export default function SettingsPage() {
                       </label>
                       <select
                         value={settings.currency}
+                        onFocus={openCurrencyOptions}
+                        onMouseEnter={() => void loadLocalizationOptions()}
+                        onMouseDown={openCurrencyOptions}
+                        onKeyDown={openCurrencyOptions}
                         onChange={(e) =>
                           updateSettings({ currency: e.target.value })
                         }
-                        className="w-full bg-surface-low border border-outline-variant p-3 font-ui text-body-sm text-on-surface focus:border-primary outline-none"
+                        className="w-full bg-bg-l2 border border-t-border p-3 font-ui text-body-sm text-text-main focus:border-primary outline-none"
                       >
-                        <option value="USD">US Dollar (USD, $)</option>
-                        <option value="EUR">Euro (EUR, €)</option>
-                        <option value="GBP">British Pound (GBP, £)</option>
-                        <option value="JPY">Japanese Yen (JPY, ¥)</option>
-                        <optgroup label="Crypto">
-                          <option value="USDC">USD Coin (USDC)</option>
-                          <option value="USDT">Tether (USDT)</option>
-                          <option value="BTC">Bitcoin (BTC)</option>
-                          <option value="ETH">Ethereum (ETH)</option>
-                        </optgroup>
+                        {showCurrencyOptions ? (
+                          <>
+                            {currencyOptions.map((currency) => (
+                              <option
+                                key={currency.value}
+                                value={currency.value}
+                                className="bg-bg-l2 text-text-main"
+                              >
+                                {currency.label}
+                              </option>
+                            ))}
+                            <optgroup
+                              label="Crypto"
+                              className="bg-bg-l2 text-text-main font-bold"
+                            >
+                              {cryptoCurrencyOptions.map((currency) => (
+                                <option
+                                  key={currency.value}
+                                  value={currency.value}
+                                  className="bg-bg-l2 text-text-main font-normal"
+                                >
+                                  {currency.label}
+                                </option>
+                              ))}
+                            </optgroup>
+                          </>
+                        ) : (
+                          <option
+                            value={settings.currency}
+                            className="bg-bg-l2 text-text-main"
+                          >
+                            {selectedCurrencyLabel}
+                          </option>
+                        )}
                       </select>
                     </div>
                   </div>
@@ -400,7 +499,7 @@ export default function SettingsPage() {
               )}
               <button
                 onClick={handleSave}
-                className="bg-primary text-on-primary px-6 py-2.5 font-ui text-label-caps uppercase hover:opacity-90 transition-opacity"
+                className="bg-zinc-950 border border-zinc-700 text-zinc-50 font-bold px-6 py-2.5 font-ui text-label-caps uppercase hover:bg-zinc-900 hover:border-zinc-500 transition-all rounded-sm shadow-md"
               >
                 Save Changes
               </button>
@@ -411,3 +510,4 @@ export default function SettingsPage() {
     </AppShell>
   );
 }
+
