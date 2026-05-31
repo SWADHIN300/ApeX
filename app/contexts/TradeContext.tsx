@@ -1,6 +1,16 @@
 "use client";
-import React, { createContext, useCallback, useContext, useState } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { useWallet } from "@solana/wallet-adapter-react";
 import { Position, TradeRecord, PortfolioData } from "@/lib/types";
+import { fetchLedgerBalance } from "@/lib/ledgerClient";
+import { useNetwork } from "./WalletProvider";
 
 type TradeContextType = {
   positions: Position[];
@@ -15,6 +25,7 @@ type TradeContextType = {
   ) => void;
   closePosition: (id: string, currentPrice: number) => void;
   updatePositionsWithMarkPrice: (pair: string, markPrice: number) => void;
+  refreshLedgerBalance: () => Promise<void>;
 };
 
 const defaultPortfolio: PortfolioData = {
@@ -29,9 +40,52 @@ const defaultPortfolio: PortfolioData = {
 const TradeContext = createContext<TradeContextType | undefined>(undefined);
 
 export function TradeProvider({ children }: { children: React.ReactNode }) {
+  const { publicKey } = useWallet();
+  const { network } = useNetwork();
   const [positions, setPositions] = useState<Position[]>([]);
   const [trades, setTrades] = useState<TradeRecord[]>([]);
   const [portfolio, setPortfolio] = useState<PortfolioData>(defaultPortfolio);
+  const positionsRef = useRef<Position[]>([]);
+
+  useEffect(() => {
+    positionsRef.current = positions;
+  }, [positions]);
+
+  const refreshLedgerBalance = useCallback(async () => {
+    if (!publicKey) {
+      setPortfolio(defaultPortfolio);
+      setPositions((prev) => (prev.length > 0 ? [] : prev));
+      setTrades((prev) => (prev.length > 0 ? [] : prev));
+      return;
+    }
+
+    const ledger = await fetchLedgerBalance({
+      wallet: publicKey.toBase58(),
+      network,
+    });
+    const currentPositions = positionsRef.current;
+    const usedMargin = currentPositions.reduce((total, position) => {
+      return total + (position.size * position.entryPrice) / position.leverage;
+    }, 0);
+    const unrealizedPnl = currentPositions.reduce(
+      (total, position) => total + position.pnl,
+      0,
+    );
+    const equity = ledger.balances.USDC + unrealizedPnl;
+
+    setPortfolio((prev) => ({
+      ...prev,
+      totalValue: equity,
+      availableMargin: Math.max(0, ledger.balances.USDC - usedMargin),
+      usedMargin,
+      unrealizedPnl,
+      totalPnlPct: equity > 0 ? (prev.totalPnl / equity) * 100 : 0,
+    }));
+  }, [network, publicKey]);
+
+  useEffect(() => {
+    void refreshLedgerBalance();
+  }, [refreshLedgerBalance]);
 
   const placeOrder = (
     pair: string,
@@ -172,6 +226,7 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
         placeOrder,
         closePosition,
         updatePositionsWithMarkPrice,
+        refreshLedgerBalance,
       }}
     >
       {children}

@@ -10,3 +10,4 @@ test-ledger
 app/.next
 app/build.log
 app/next-localhost*.log
+.ledger

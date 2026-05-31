@@ -4,6 +4,12 @@ import { Copy, ExternalLink, ShieldCheck } from 'lucide-react'
 import { useWallet, useConnection } from '@solana/wallet-adapter-react'
 import { useEffect, useState } from 'react'
 import { useNetwork } from '@/contexts/WalletProvider'
+import { useTrade } from '@/contexts/TradeContext'
+import {
+  creditConfirmedDeposit,
+  fetchLedgerBalance,
+  type LedgerBalance,
+} from '@/lib/ledgerClient'
 import {
   hasTreasuryWallet,
   hasUsdcMint,
@@ -18,7 +24,9 @@ export default function AccountsPage() {
   const { publicKey, connected, sendTransaction } = useWallet()
   const { connection } = useConnection()
   const { network } = useNetwork()
+  const { refreshLedgerBalance } = useTrade()
   const [solBalance, setSolBalance] = useState<number>(0)
+  const [ledgerBalance, setLedgerBalance] = useState<LedgerBalance | null>(null)
   const [depositAsset, setDepositAsset] = useState<DepositAsset>('SOL')
   const [depositAmount, setDepositAmount] = useState('')
   const [isDepositing, setIsDepositing] = useState(false)
@@ -39,6 +47,17 @@ export default function AccountsPage() {
       setSolBalance(0)
     }
   }, [publicKey, connection])
+
+  useEffect(() => {
+    if (!publicKey) {
+      setLedgerBalance(null)
+      return
+    }
+
+    fetchLedgerBalance({ wallet: publicKey.toBase58(), network })
+      .then(setLedgerBalance)
+      .catch(() => setLedgerBalance(null))
+  }, [network, publicKey])
 
   const copyAddress = () => {
     if (publicKey) {
@@ -84,7 +103,16 @@ export default function AccountsPage() {
               sendTransaction,
             })
 
+      const credited = await creditConfirmedDeposit({
+        signature,
+        wallet: publicKey.toBase58(),
+        asset: depositAsset,
+        network,
+      })
+
       setDepositSignature(signature)
+      setLedgerBalance(credited.balance)
+      await refreshLedgerBalance()
       setDepositAmount('')
     } catch (error) {
       setDepositError(
@@ -154,6 +182,24 @@ export default function AccountsPage() {
               <span className="text-label-caps font-ui text-on-surface-variant">SOL Balance</span>
               <div className="mt-2">
                 <span className="font-data text-data-lg text-on-surface">{solBalance.toFixed(4)} SOL</span>
+              </div>
+            </div>
+
+            <div className="bg-surface-container border border-outline-variant p-4">
+              <span className="text-label-caps font-ui text-on-surface-variant">Credited USDC</span>
+              <div className="mt-2">
+                <span className="font-data text-data-lg text-on-surface">
+                  {(ledgerBalance?.balances.USDC ?? 0).toFixed(2)} USDC
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-surface-container border border-outline-variant p-4">
+              <span className="text-label-caps font-ui text-on-surface-variant">Credited SOL</span>
+              <div className="mt-2">
+                <span className="font-data text-data-lg text-on-surface">
+                  {(ledgerBalance?.balances.SOL ?? 0).toFixed(4)} SOL
+                </span>
               </div>
             </div>
           </div>
@@ -231,6 +277,32 @@ export default function AccountsPage() {
               >
                 Deposit confirmed <ExternalLink size={14} />
               </a>
+            )}
+
+            {ledgerBalance && ledgerBalance.deposits.length > 0 && (
+              <div className="border border-outline-variant">
+                <div className="px-4 py-3 border-b border-outline-variant text-label-caps font-ui text-on-surface-variant">
+                  Credited Deposits
+                </div>
+                <div className="divide-y divide-outline-variant">
+                  {ledgerBalance.deposits.slice(0, 5).map((deposit) => (
+                    <div
+                      key={deposit.signature}
+                      className="grid grid-cols-1 md:grid-cols-[1fr_auto_auto] gap-2 px-4 py-3 font-ui text-body-sm text-on-surface"
+                    >
+                      <span className="font-data text-data-sm truncate">
+                        {deposit.signature}
+                      </span>
+                      <span>
+                        {deposit.amount.toFixed(deposit.asset === 'SOL' ? 4 : 2)} {deposit.asset}
+                      </span>
+                      <span className="text-on-surface-variant">
+                        {new Date(deposit.creditedAt).toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
 
             <button

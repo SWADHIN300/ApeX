@@ -10,6 +10,7 @@ import {
   CircleHelp,
   Gift,
   History,
+  Repeat2,
   Settings,
   TrendingUp,
   User,
@@ -23,6 +24,7 @@ interface NavItem {
 
 const mainItems: NavItem[] = [
   { icon: ArrowUpDown, label: "Trade", href: "/trade" },
+  { icon: Repeat2, label: "Swap", href: "/swap" },
   { icon: TrendingUp, label: "Markets", href: "/markets" },
   { icon: History, label: "History", href: "/history" },
   { icon: Gift, label: "Rewards", href: "/rewards" },
@@ -43,9 +45,13 @@ interface SideNavProps {
 export default function SideNav({ isOpen, isExpanded, onToggleExpand }: SideNavProps) {
   const pathname = usePathname();
 
+  const tooltipClass = `pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 whitespace-nowrap border border-t-border bg-bg-l1 px-3 py-2 t-label-caps text-text-main shadow-lg opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 ${
+    isExpanded ? "hidden" : ""
+  }`;
+
   return (
     <aside
-      className={`fixed left-0 top-14 z-40 h-[calc(100vh-56px)] flex flex-col bg-bg-surface br-thin transition-[transform,width] duration-300 overflow-hidden ${
+      className={`fixed left-0 top-14 z-40 h-[calc(100vh-56px)] flex flex-col bg-bg-surface br-thin transition-[transform,width] duration-300 ${
         isOpen
           ? isExpanded
             ? "w-52 translate-x-0"
@@ -64,7 +70,9 @@ export default function SideNav({ isOpen, isExpanded, onToggleExpand }: SideNavP
             <Link
               key={item.href}
               href={item.href}
-              className={`flex h-11 w-full items-center gap-4 px-3 cursor-pointer transition-all ${
+              aria-label={item.label}
+              title={item.label}
+              className={`group relative flex h-11 w-full items-center gap-4 px-3 cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary ${
                 isActive
                   ? "bg-primary-ctr text-white border-l-2 border-primary"
                   : "text-text-muted hover:bg-bg-l3 border-l-2 border-transparent"
@@ -80,6 +88,7 @@ export default function SideNav({ isOpen, isExpanded, onToggleExpand }: SideNavP
               >
                 {item.label}
               </span>
+              <span className={tooltipClass}>{item.label}</span>
             </Link>
           );
         })}
@@ -105,7 +114,9 @@ export default function SideNav({ isOpen, isExpanded, onToggleExpand }: SideNavP
             <Link
               key={item.label}
               href={item.href}
-              className="flex h-11 w-full items-center gap-4 px-3 text-text-muted hover:bg-bg-l3 cursor-pointer transition-all border-l-2 border-transparent no-underline"
+              aria-label={item.label}
+              title={item.label}
+              className="group relative flex h-11 w-full items-center gap-4 px-3 text-text-muted hover:bg-bg-l3 cursor-pointer transition-all border-l-2 border-transparent no-underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
             >
               <Icon size={18} className="shrink-0" />
               <span
@@ -117,6 +128,7 @@ export default function SideNav({ isOpen, isExpanded, onToggleExpand }: SideNavP
               >
                 {item.label}
               </span>
+              <span className={tooltipClass}>{item.label}</span>
             </Link>
           );
         })}
@@ -124,8 +136,9 @@ export default function SideNav({ isOpen, isExpanded, onToggleExpand }: SideNavP
         {/* Expand / Collapse toggle button */}
         <button
           onClick={onToggleExpand}
-          className="flex h-11 w-full items-center gap-4 px-3 text-text-muted hover:bg-bg-l3 cursor-pointer transition-all border-l-2 border-transparent bt-thin mt-1"
+          className="group relative flex h-11 w-full items-center gap-4 px-3 text-text-muted hover:bg-bg-l3 cursor-pointer transition-all border-l-2 border-transparent bt-thin mt-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
           aria-label={isExpanded ? "Collapse sidebar" : "Expand sidebar"}
+          title={isExpanded ? "Collapse sidebar" : "Expand sidebar"}
         >
           {isExpanded ? (
             <ChevronLeft size={18} className="shrink-0" />
@@ -140,6 +153,9 @@ export default function SideNav({ isOpen, isExpanded, onToggleExpand }: SideNavP
             }`}
           >
             Collapse
+          </span>
+          <span className={tooltipClass}>
+            {isExpanded ? "Collapse" : "Expand"}
           </span>
         </button>
       </div>
