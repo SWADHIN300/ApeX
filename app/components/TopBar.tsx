@@ -4,7 +4,10 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import ThemeToggle from "./ThemeToggle";
-import { useMarket, AVAILABLE_MARKETS } from "@/contexts/MarketContext";
+import { useMarket } from "@/contexts/MarketContext";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { useNetwork } from "@/contexts/WalletProvider";
+import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import {
   Bell,
   PanelLeftClose,
@@ -20,23 +23,26 @@ export default function TopBar({
   isSideNavOpen?: boolean;
   onToggleSideNav?: () => void;
 }) {
-  const { market, setMarket } = useMarket();
-  const [price, setPrice] = useState(market.basePrice);
+  const { market, setMarket, markets } = useMarket();
+  const [price, setPrice] = useState(market?.price || 0);
   const [flashClass, setFlashClass] = useState("");
-  const prevRef = useRef(market.basePrice);
+  const prevRef = useRef(market?.price || 0);
   const flashKey = useRef(0);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const { network, setNetwork } = useNetwork();
 
   useEffect(() => {
-    setPrice(market.basePrice);
-    prevRef.current = market.basePrice;
-  }, [market.pair, market.basePrice]);
+    if (!market) return;
+    setPrice(market.price);
+    prevRef.current = market.price;
+  }, [market?.symbol, market?.price]);
 
   useEffect(() => {
+    if (!market) return;
     const id = setInterval(() => {
-      const delta = (Math.random() - 0.5) * (market.basePrice * 0.001);
+      const delta = (Math.random() - 0.5) * (market.price * 0.001);
       const next = +(prevRef.current + delta).toFixed(2);
       prevRef.current = next;
       setPrice(next);
@@ -45,13 +51,13 @@ export default function TopBar({
       setTimeout(() => setFlashClass(""), 300);
     }, 2500);
     return () => clearInterval(id);
-  }, [market.basePrice]);
+  }, [market?.price]);
 
   const fmt = (n: number) =>
     n.toLocaleString("en-US", { minimumFractionDigits: 2 });
 
-  const filteredMarkets = AVAILABLE_MARKETS.filter((m) =>
-    m.pair.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredMarkets = markets.filter((m) =>
+    m.symbol.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -128,15 +134,18 @@ export default function TopBar({
                 {filteredMarkets.length > 0 ? (
                   filteredMarkets.map((m) => (
                     <div
-                      key={m.pair}
-                      className="px-3 py-2 hover:bg-bg-l2 cursor-pointer t-data-sm text-text-main"
+                      key={m.symbol}
+                      className="px-3 py-2 hover:bg-bg-l2 cursor-pointer t-data-sm text-text-main flex justify-between"
                       onMouseDown={() => {
                         setMarket(m);
                         setSearchQuery("");
                         setIsSearchOpen(false);
                       }}
                     >
-                      {m.pair}
+                      <span>{m.symbol}</span>
+                      <span className={m.change24h >= 0 ? "text-long" : "text-short"}>
+                        {m.change24h > 0 ? "+" : ""}{m.change24h.toFixed(2)}%
+                      </span>
                     </div>
                   ))
                 ) : (
@@ -149,7 +158,7 @@ export default function TopBar({
           </div>
 
           <div className="flex min-w-24 flex-col">
-            <span className="t-label-caps text-text-muted">{market.pair}</span>
+            <span className="t-label-caps text-text-muted">{market?.symbol || "Market"}</span>
             <span
               key={flashKey.current}
               className={`t-data-md text-text-price ${flashClass}`}
@@ -161,23 +170,23 @@ export default function TopBar({
             <span className="t-label-caps text-text-muted">24h Change</span>
             <span
               className={`t-data-md ${
-                market.change24h >= 0 ? "text-long" : "text-short"
+                market?.change24h >= 0 ? "text-long" : "text-short"
               }`}
             >
-              {market.change24h > 0 ? "+" : ""}
-              {market.change24h}%
+              {market?.change24h > 0 ? "+" : ""}
+              {market?.change24h.toFixed(2)}%
             </span>
           </div>
           <div className="flex min-w-24 flex-col">
-            <span className="t-label-caps text-text-muted">Funding Rate</span>
+            <span className="t-label-caps text-text-muted">24h High</span>
             <span className="t-data-md text-text-main">
-              {(market.fundingRate * 100).toFixed(4)}%
+              {fmt(market?.high24h || 0)}
             </span>
           </div>
           <div className="flex min-w-24 flex-col">
-            <span className="t-label-caps text-text-muted">Open Interest</span>
+            <span className="t-label-caps text-text-muted">24h Vol</span>
             <span className="t-data-md text-text-main">
-              ${market.openInterest}
+              {market?.volume24h}
             </span>
           </div>
         </div>
@@ -202,9 +211,16 @@ export default function TopBar({
         >
           <Settings size={17} />
         </Link>
-        <button className="hidden sm:block bg-primary-ctr text-white px-4 py-1.5 t-label-caps hover:opacity-90 active:scale-[0.97]">
-          Connect Wallet
-        </button>
+        <div className="hidden sm:flex items-center gap-2 ml-2">
+          <button
+            onClick={() => setNetwork(network === "devnet" ? "mainnet-beta" : "devnet")}
+            className="h-8 px-3 flex items-center justify-center border border-t-border hover:bg-bg-l4 t-label-caps text-text-main transition-colors capitalize"
+            style={{ fontSize: "11px" }}
+          >
+            {network.replace("-beta", "")}
+          </button>
+          <WalletMultiButton style={{ height: "32px", fontSize: "12px", background: "var(--primary-container)", borderRadius: "0px", fontFamily: "var(--font-sans)", textTransform: "uppercase", fontWeight: 700, padding: "0 16px" }} />
+        </div>
       </div>
     </header>
   );

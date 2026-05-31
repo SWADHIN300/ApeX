@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
   CircleHelp,
   Gift,
   History,
@@ -32,15 +34,23 @@ const bottomItems: NavItem[] = [
   { icon: CircleHelp, label: "Support", href: "/settings" },
 ];
 
-export default function SideNav({ isOpen }: { isOpen: boolean }) {
+interface SideNavProps {
+  isOpen: boolean;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+}
+
+export default function SideNav({ isOpen, isExpanded, onToggleExpand }: SideNavProps) {
   const pathname = usePathname();
 
   return (
     <aside
-      className={`fixed left-0 top-14 z-40 h-[calc(100vh-56px)] flex flex-col bg-bg-surface br-thin transition-[transform,width] duration-300 group overflow-hidden ${
+      className={`fixed left-0 top-14 z-40 h-[calc(100vh-56px)] flex flex-col bg-bg-surface br-thin transition-[transform,width] duration-300 overflow-hidden ${
         isOpen
-          ? "w-16 hover:w-64 translate-x-0"
-          : "w-0 hover:w-0 -translate-x-full"
+          ? isExpanded
+            ? "w-52 translate-x-0"
+            : "w-16 translate-x-0"
+          : "w-0 -translate-x-full"
       }`}
     >
       {/* Main nav */}
@@ -54,14 +64,20 @@ export default function SideNav({ isOpen }: { isOpen: boolean }) {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex h-11 w-full items-center justify-center gap-0 px-0 cursor-pointer transition-all group-hover:justify-start group-hover:gap-4 group-hover:px-3 ${
+              className={`flex h-11 w-full items-center gap-4 px-3 cursor-pointer transition-all ${
                 isActive
                   ? "bg-primary-ctr text-white border-l-2 border-primary"
                   : "text-text-muted hover:bg-bg-l3 border-l-2 border-transparent"
               } no-underline`}
             >
               <Icon size={18} className="shrink-0" />
-              <span className="t-label-caps w-0 overflow-hidden opacity-0 group-hover:w-auto group-hover:opacity-100 transition-opacity whitespace-nowrap">
+              <span
+                className={`t-label-caps whitespace-nowrap transition-all duration-300 ${
+                  isExpanded
+                    ? "w-auto opacity-100"
+                    : "w-0 overflow-hidden opacity-0"
+                }`}
+              >
                 {item.label}
               </span>
             </Link>
@@ -69,11 +85,15 @@ export default function SideNav({ isOpen }: { isOpen: boolean }) {
         })}
       </div>
 
-      {/* Deposit (visible on expand) */}
-      <div className="mt-auto p-4 bt-thin opacity-0 group-hover:opacity-100 transition-opacity">
-        <button className="w-full py-2 bg-long text-white t-label-caps hover:opacity-90">
+      {/* Deposit (visible when expanded) */}
+      <div
+        className={`mt-auto p-4 bt-thin transition-opacity duration-300 ${
+          isExpanded ? "opacity-100" : "opacity-0 pointer-events-none"
+        }`}
+      >
+        <Link href="/accounts" className="block w-full text-center py-2 bg-long text-white t-label-caps hover:opacity-90 no-underline">
           Deposit Funds
-        </button>
+        </Link>
       </div>
 
       {/* Bottom nav */}
@@ -85,15 +105,43 @@ export default function SideNav({ isOpen }: { isOpen: boolean }) {
             <Link
               key={item.label}
               href={item.href}
-              className="flex h-11 w-full items-center justify-center gap-0 px-0 text-text-muted hover:bg-bg-l3 cursor-pointer transition-all border-l-2 border-transparent group-hover:justify-start group-hover:gap-4 group-hover:px-3 no-underline"
+              className="flex h-11 w-full items-center gap-4 px-3 text-text-muted hover:bg-bg-l3 cursor-pointer transition-all border-l-2 border-transparent no-underline"
             >
               <Icon size={18} className="shrink-0" />
-              <span className="t-label-caps w-0 overflow-hidden opacity-0 group-hover:w-auto group-hover:opacity-100 transition-opacity whitespace-nowrap">
+              <span
+                className={`t-label-caps whitespace-nowrap transition-all duration-300 ${
+                  isExpanded
+                    ? "w-auto opacity-100"
+                    : "w-0 overflow-hidden opacity-0"
+                }`}
+              >
                 {item.label}
               </span>
             </Link>
           );
         })}
+
+        {/* Expand / Collapse toggle button */}
+        <button
+          onClick={onToggleExpand}
+          className="flex h-11 w-full items-center gap-4 px-3 text-text-muted hover:bg-bg-l3 cursor-pointer transition-all border-l-2 border-transparent bt-thin mt-1"
+          aria-label={isExpanded ? "Collapse sidebar" : "Expand sidebar"}
+        >
+          {isExpanded ? (
+            <ChevronLeft size={18} className="shrink-0" />
+          ) : (
+            <ChevronRight size={18} className="shrink-0" />
+          )}
+          <span
+            className={`t-label-caps whitespace-nowrap transition-all duration-300 ${
+              isExpanded
+                ? "w-auto opacity-100"
+                : "w-0 overflow-hidden opacity-0"
+            }`}
+          >
+            Collapse
+          </span>
+        </button>
       </div>
     </aside>
   );

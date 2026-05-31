@@ -2,36 +2,11 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { usePositions } from "@/hooks/usePositions";
+import { useTrade } from "@/contexts/TradeContext";
+import { useMarket } from "@/contexts/MarketContext";
 
 type Tab = "Positions" | "Open Orders" | "History" | "Trade Logs";
-
-interface Position {
-  pair: string;
-  side: string;
-  leverage: string;
-  size: string;
-  entryPrice: string;
-  markPrice: string;
-  liqPrice: string;
-  pnl: string;
-  pnlPct: string;
-  positive: boolean;
-}
-
-const positions: Position[] = [
-  {
-    pair: "BTC-PERP",
-    side: "Long",
-    leverage: "10x",
-    size: "0.500 BTC",
-    entryPrice: "$64,000.00",
-    markPrice: "$65,432.10",
-    liqPrice: "$57,600.00",
-    pnl: "+$716.05",
-    pnlPct: "(+12.50%)",
-    positive: true,
-  },
-];
 
 const tabs: Tab[] = ["Positions", "Open Orders", "History", "Trade Logs"];
 
@@ -43,6 +18,19 @@ export default function PositionPanel({
   onToggle?: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<Tab>("Positions");
+  const positions = usePositions();
+  const { trades, closePosition } = useTrade();
+  const { market } = useMarket();
+
+  const handleClose = (id: string) => {
+    // We assume current market price if closing active pair, else wait, to be perfectly accurate we'd fetch the exact price of the pair being closed.
+    // Since this is a demo, if the position is the active market, use market.price, else use position's markPrice.
+    const pos = positions.find((p) => p.id === id);
+    if (!pos) return;
+    
+    const closePrice = (pos.pair === market?.symbol && market?.price) ? market.price : pos.markPrice;
+    closePosition(id, closePrice);
+  };
 
   return (
     <section
@@ -65,6 +53,7 @@ export default function PositionPanel({
             >
               {tab}
               {tab === "Positions" && ` (${positions.length})`}
+              {tab === "History" && ` (${trades.length})`}
               {tab === "Open Orders" && " (0)"}
             </button>
           ))}
@@ -80,82 +69,138 @@ export default function PositionPanel({
         </button>
       </div>
 
-      {/* Table */}
+      {/* Content */}
       <div
-        className={`overflow-x-auto no-scrollbar transition-opacity duration-200 ${
+        className={`overflow-x-auto overflow-y-auto h-[calc(100%-44px)] no-scrollbar transition-opacity duration-200 ${
           isOpen ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       >
-        <table className="w-full min-w-[760px] text-left">
-          <thead className="bg-bg-l2 bb-thin">
-            <tr>
-              {[
-                "Position",
-                "Size",
-                "Entry Price",
-                "Mark Price",
-                "Liq. Price",
-                "PnL (ROI%)",
-              ].map((col) => (
-                <th
-                  key={col}
-                  className="px-4 py-2 t-label-caps text-text-muted"
-                >
-                  {col}
+        {activeTab === "Positions" && (
+          <table className="w-full min-w-[760px] text-left">
+            <thead className="bg-bg-l2 bb-thin sticky top-0 z-10">
+              <tr>
+                {[
+                  "Position",
+                  "Size",
+                  "Entry Price",
+                  "Mark Price",
+                  "Liq. Price",
+                  "PnL (ROI%)",
+                ].map((col) => (
+                  <th
+                    key={col}
+                    className="px-4 py-2 t-label-caps text-text-muted"
+                  >
+                    {col}
+                  </th>
+                ))}
+                <th className="px-4 py-2 t-label-caps text-text-muted text-right">
+                  Actions
                 </th>
-              ))}
-              <th className="px-4 py-2 t-label-caps text-text-muted text-right">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {positions.map((pos, i) => (
-              <tr key={i} className="hover:bg-bg-l2 transition-colors bb-thin">
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-long" />
-                    <span className="t-data-md text-text-main">{pos.pair}</span>
-                    <span
-                      className="t-label-caps px-1 text-long"
-                      style={{ background: "rgba(29,158,117,0.1)" }}
-                    >
-                      {pos.side} {pos.leverage}
-                    </span>
-                  </div>
-                </td>
-                <td className="px-4 py-3 t-data-md text-text-main">
-                  {pos.size}
-                </td>
-                <td className="px-4 py-3 t-data-md text-text-muted">
-                  {pos.entryPrice}
-                </td>
-                <td className="px-4 py-3 t-data-md text-text-muted">
-                  {pos.markPrice}
-                </td>
-                <td className="px-4 py-3 t-data-md text-text-error">
-                  {pos.liqPrice}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-col">
-                    <span className="t-data-md text-long">{pos.pnl}</span>
-                    <span className="t-data-sm text-long">{pos.pnlPct}</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <div className="flex justify-end gap-2">
-                    <button className="px-3 py-1 bg-bg-l3 border border-t-border-soft t-label-caps text-text-muted hover:bg-bg-l4">
-                      TP/SL
-                    </button>
-                    <button className="px-3 py-1 bg-bg-l3 border border-t-border-soft t-label-caps text-text-muted hover:bg-text-error/20 hover:text-text-error transition-all">
-                      Close
-                    </button>
-                  </div>
-                </td>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {positions.map((pos) => (
+                <tr key={pos.id} className="hover:bg-bg-l2 transition-colors bb-thin">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-1.5 h-1.5 rounded-full ${pos.side === 'Long' ? 'bg-long' : 'bg-short'}`} />
+                      <span className="t-data-md text-text-main">{pos.pair}</span>
+                      <span
+                        className={`t-label-caps px-1 ${pos.side === 'Long' ? 'text-long' : 'text-short'}`}
+                        style={{ background: pos.side === 'Long' ? "rgba(29,158,117,0.1)" : "rgba(216,90,48,0.1)" }}
+                      >
+                        {pos.side} {pos.leverage}x
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 t-data-md text-text-main">
+                    {pos.size.toFixed(4)}
+                  </td>
+                  <td className="px-4 py-3 t-data-md text-text-muted">
+                    ${pos.entryPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                  <td className="px-4 py-3 t-data-md text-text-muted">
+                    ${pos.markPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                  <td className="px-4 py-3 t-data-md text-text-error">
+                    ${pos.liqPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-col">
+                      <span className={`t-data-md ${pos.pnl >= 0 ? 'text-long' : 'text-short'}`}>
+                        {pos.pnl >= 0 ? '+' : ''}${pos.pnl.toFixed(2)}
+                      </span>
+                      <span className={`t-data-sm ${pos.pnl >= 0 ? 'text-long' : 'text-short'}`}>
+                        ({pos.roi >= 0 ? '+' : ''}{pos.roi.toFixed(2)}%)
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex justify-end gap-2">
+                      <button className="px-3 py-1 bg-bg-l3 border border-t-border-soft t-label-caps text-text-muted hover:bg-bg-l4">
+                        TP/SL
+                      </button>
+                      <button 
+                        onClick={() => handleClose(pos.id)}
+                        className="px-3 py-1 bg-bg-l3 border border-t-border-soft t-label-caps text-text-muted hover:bg-text-error/20 hover:text-text-error transition-all"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {positions.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="text-center py-8 t-body-sm text-text-muted">
+                    No open positions
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
+
+        {activeTab === "History" && (
+          <table className="w-full min-w-[760px] text-left">
+            <thead className="bg-bg-l2 bb-thin sticky top-0 z-10">
+              <tr>
+                {["Time", "Pair", "Side", "Size", "Price", "Fee", "PnL"].map((col) => (
+                  <th key={col} className="px-4 py-2 t-label-caps text-text-muted">
+                    {col}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {trades.map((t) => (
+                <tr key={t.id + t.time} className="hover:bg-bg-l2 transition-colors bb-thin">
+                  <td className="px-4 py-2 t-data-sm text-text-muted">
+                    {new Date(t.time * 1000).toLocaleString()}
+                  </td>
+                  <td className="px-4 py-2 t-data-sm text-text-main">{t.pair}</td>
+                  <td className={`px-4 py-2 t-data-sm ${t.side === 'Long' ? 'text-long' : 'text-short'}`}>
+                    {t.side}
+                  </td>
+                  <td className="px-4 py-2 t-data-sm text-text-main">{t.size.toFixed(4)}</td>
+                  <td className="px-4 py-2 t-data-sm text-text-muted">${t.price.toFixed(2)}</td>
+                  <td className="px-4 py-2 t-data-sm text-text-muted">${t.fee.toFixed(2)}</td>
+                  <td className={`px-4 py-2 t-data-sm ${t.pnl >= 0 ? 'text-long' : 'text-short'}`}>
+                    {t.pnl >= 0 ? '+' : ''}${t.pnl.toFixed(2)}
+                  </td>
+                </tr>
+              ))}
+              {trades.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="text-center py-8 t-body-sm text-text-muted">
+                    No trade history
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
       </div>
     </section>
   );

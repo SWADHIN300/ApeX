@@ -1,41 +1,77 @@
-'use client'
-import React, { createContext, useContext, useState } from 'react'
-
-export type MarketInfo = {
-  pair: string
-  basePrice: number
-  change24h: number
-  fundingRate: number
-  openInterest: string
-}
-
-export const AVAILABLE_MARKETS: MarketInfo[] = [
-  { pair: 'BTC-PERP', basePrice: 65432.1, change24h: 2.4, fundingRate: 0.0100, openInterest: '120M' },
-  { pair: 'SOL-PERP', basePrice: 145.2, change24h: 5.2, fundingRate: 0.0150, openInterest: '45M' },
-  { pair: 'ETH-PERP', basePrice: 3450.5, change24h: -1.2, fundingRate: 0.0050, openInterest: '80M' },
-]
+"use client";
+import React, { createContext, useContext, useState, useEffect } from "react";
+import { Ticker } from "@/lib/types";
+import { fetchAllTickers, subscribeTicker, PAIR_TO_SYMBOL } from "@/lib/api";
 
 type MarketContextType = {
-  market: MarketInfo
-  setMarket: (market: MarketInfo) => void
-}
+  market: Ticker;
+  setMarket: (market: Ticker) => void;
+  markets: Ticker[];
+  isLoading: boolean;
+};
 
-const MarketContext = createContext<MarketContextType | undefined>(undefined)
+// Fallback initial market
+const FALLBACK_MARKET: Ticker = {
+  symbol: "BTC-PERP",
+  price: 65000,
+  change24h: 0,
+  volume24h: "0M",
+  high24h: 66000,
+  low24h: 64000,
+};
+
+const MarketContext = createContext<MarketContextType | undefined>(undefined);
 
 export function MarketProvider({ children }: { children: React.ReactNode }) {
-  const [market, setMarket] = useState<MarketInfo>(AVAILABLE_MARKETS[0])
+  const [markets, setMarkets] = useState<Ticker[]>([FALLBACK_MARKET]);
+  const [market, setMarket] = useState<Ticker>(FALLBACK_MARKET);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Initial fetch of all markets
+  useEffect(() => {
+    let mounted = true;
+    const init = async () => {
+      const data = await fetchAllTickers();
+      if (!mounted) return;
+      if (data && data.length > 0) {
+        setMarkets(data);
+        // Find BTC-PERP or use the first available
+        const btc = data.find((m) => m.symbol === "BTC-PERP") || data[0];
+        setMarket(btc);
+      }
+      setIsLoading(false);
+    };
+    init();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // WebSocket subscription for the active market
+  useEffect(() => {
+    if (!market || isLoading) return;
+
+    const unsubscribe = subscribeTicker(market.symbol, (ticker) => {
+      setMarket((prev) => ({ ...prev, ...ticker }));
+      setMarkets((prevList) =>
+        prevList.map((m) => (m.symbol === ticker.symbol ? ticker : m))
+      );
+    });
+
+    return () => unsubscribe();
+  }, [market?.symbol, isLoading]);
 
   return (
-    <MarketContext.Provider value={{ market, setMarket }}>
+    <MarketContext.Provider value={{ market, setMarket, markets, isLoading }}>
       {children}
     </MarketContext.Provider>
-  )
+  );
 }
 
 export function useMarket() {
-  const context = useContext(MarketContext)
+  const context = useContext(MarketContext);
   if (context === undefined) {
-    throw new Error('useMarket must be used within a MarketProvider')
+    throw new Error("useMarket must be used within a MarketProvider");
   }
-  return context
+  return context;
 }

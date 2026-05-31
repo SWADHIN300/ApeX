@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 import { MarketProvider } from "@/contexts/MarketContext";
+import { TradeProvider } from "@/contexts/TradeContext";
+import { WalletProvider } from "@/contexts/WalletProvider";
 
 export const metadata: Metadata = {
   title: "ApeX | Perpetual Trading Terminal",
@@ -16,9 +18,13 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <body className="h-screen overflow-hidden bg-bg-base text-text-main font-sans">
-        <SettingsProvider>
-          <MarketProvider>{children}</MarketProvider>
-        </SettingsProvider>
+        <WalletProvider>
+          <SettingsProvider>
+            <MarketProvider>
+              <TradeProvider>{children}</TradeProvider>
+            </MarketProvider>
+          </SettingsProvider>
+        </WalletProvider>
       </body>
     </html>
   );

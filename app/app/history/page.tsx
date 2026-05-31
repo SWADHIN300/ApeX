@@ -1,24 +1,25 @@
 'use client'
 import { useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
-import { MOCK_HISTORY } from '@/lib/mock-data'
-import { Search, Download, TrendingUp, TrendingDown, Filter } from 'lucide-react'
+import { useTrade } from '@/contexts/TradeContext'
+import { Search, Download, TrendingUp, TrendingDown } from 'lucide-react'
 
 type FilterType = 'all' | 'wins' | 'losses'
 
 export default function HistoryPage() {
+  const { trades } = useTrade()
   const [search, setSearch]   = useState('')
   const [filter, setFilter]   = useState<FilterType>('all')
   const [page, setPage]       = useState(1)
   const PER_PAGE = 7
 
-  const totalPnl   = MOCK_HISTORY.reduce((s, t) => s + t.pnl, 0)
-  const wins       = MOCK_HISTORY.filter((t) => t.pnl >= 0).length
-  const losses     = MOCK_HISTORY.filter((t) => t.pnl < 0).length
-  const winRate    = ((wins / MOCK_HISTORY.length) * 100).toFixed(1)
-  const totalFees  = MOCK_HISTORY.reduce((s, t) => s + t.fee, 0)
+  const totalPnl   = trades.reduce((s, t) => s + t.pnl, 0)
+  const wins       = trades.filter((t) => t.pnl >= 0).length
+  const losses     = trades.filter((t) => t.pnl < 0).length
+  const winRate    = trades.length ? ((wins / trades.length) * 100).toFixed(1) : "0.0"
+  const totalFees  = trades.reduce((s, t) => s + t.fee, 0)
 
-  const filtered = MOCK_HISTORY
+  const filtered = trades
     .filter((t) => {
       if (filter === 'wins')   return t.pnl >= 0
       if (filter === 'losses') return t.pnl < 0
@@ -29,8 +30,34 @@ export default function HistoryPage() {
       t.id.toLowerCase().includes(search.toLowerCase())
     )
 
-  const totalPages = Math.ceil(filtered.length / PER_PAGE)
+  const totalPages = Math.ceil(filtered.length / PER_PAGE) || 1
   const paginated  = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE)
+
+  const exportCSV = () => {
+    const headers = ['Tx ID', 'Time', 'Market', 'Side', 'Size', 'Avg Price', 'Fee', 'PnL', 'Status']
+    const rows = trades.map(t => [
+      t.id,
+      new Date(t.time * 1000).toLocaleString(),
+      t.pair,
+      t.side,
+      t.size.toFixed(4),
+      t.price.toFixed(2),
+      t.fee.toFixed(2),
+      t.pnl.toFixed(2),
+      t.status
+    ])
+    
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+      
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "apex_trade_history.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
 
   return (
     <AppShell>
@@ -40,10 +67,13 @@ export default function HistoryPage() {
           <div>
             <h1 className="font-ui text-headline-md text-on-surface">Trade History</h1>
             <p className="font-ui text-body-sm text-on-surface-variant mt-0.5">
-              {MOCK_HISTORY.length} closed trades · All time
+              {trades.length} closed trades · All time
             </p>
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-label-caps font-ui text-on-surface-variant hover:text-on-surface hover:bg-surface-high transition-colors">
+          <button 
+            onClick={exportCSV}
+            className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-label-caps font-ui text-on-surface-variant hover:text-on-surface hover:bg-surface-high transition-colors"
+          >
             <Download size={14} />
             Export CSV
           </button>
@@ -110,16 +140,16 @@ export default function HistoryPage() {
               {paginated.map((t) => {
                 const isPos = t.pnl >= 0
                 return (
-                  <tr key={t.id} className="hover:bg-surface-container transition-colors">
+                  <tr key={t.id + t.time} className="hover:bg-surface-container transition-colors">
                     <td className="px-4 py-3 font-data text-data-sm text-on-surface-variant">{t.id}</td>
-                    <td className="px-4 py-3 font-data text-data-sm text-on-surface-variant whitespace-nowrap">{t.time}</td>
+                    <td className="px-4 py-3 font-data text-data-sm text-on-surface-variant whitespace-nowrap">{new Date(t.time * 1000).toLocaleString()}</td>
                     <td className="px-4 py-3 font-data text-data-md text-on-surface">{t.pair}</td>
                     <td className="px-4 py-3">
                       <span className={`text-label-caps font-ui px-2 py-0.5 ${t.side === 'Long' ? 'bg-long/10 text-long' : 'bg-short/10 text-short'}`}>
                         {t.side}
                       </span>
                     </td>
-                    <td className="px-4 py-3 font-data text-data-sm text-on-surface">{t.size}</td>
+                    <td className="px-4 py-3 font-data text-data-sm text-on-surface">{t.size.toFixed(4)}</td>
                     <td className="px-4 py-3 font-data text-data-md text-on-surface">
                       ${t.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </td>

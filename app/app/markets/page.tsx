@@ -1,23 +1,25 @@
 'use client'
 import { useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
-import { MOCK_MARKETS } from '@/lib/mock-data'
+import { useMarket } from '@/contexts/MarketContext'
 import { Search, TrendingUp, TrendingDown, Star, ArrowUpDown } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { Ticker } from '@/lib/types'
 
-type SortKey = 'pair' | 'price' | 'change24h' | 'volume24h' | 'openInterest' | 'fundingRate'
+type SortKey = 'symbol' | 'price' | 'change24h' | 'volume24h'
 
 export default function MarketsPage() {
   const router = useRouter()
+  const { markets, setMarket, isLoading } = useMarket()
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('volume24h')
   const [sortAsc, setSortAsc] = useState(false)
   const [favorites, setFavorites] = useState<string[]>([])
   const [filter, setFilter] = useState<'all' | 'favorites' | 'gainers' | 'losers'>('all')
 
-  const toggleFav = (pair: string) => {
+  const toggleFav = (symbol: string) => {
     setFavorites((prev) =>
-      prev.includes(pair) ? prev.filter((p) => p !== pair) : [...prev, pair]
+      prev.includes(symbol) ? prev.filter((p) => p !== symbol) : [...prev, symbol]
     )
   }
 
@@ -26,14 +28,14 @@ export default function MarketsPage() {
     else { setSortKey(key); setSortAsc(false) }
   }
 
-  const filtered = MOCK_MARKETS
+  const filtered = markets
     .filter((m) => {
-      if (filter === 'favorites') return favorites.includes(m.pair)
+      if (filter === 'favorites') return favorites.includes(m.symbol)
       if (filter === 'gainers') return m.change24h > 0
       if (filter === 'losers') return m.change24h < 0
       return true
     })
-    .filter((m) => m.pair.toLowerCase().includes(search.toLowerCase()))
+    .filter((m) => m.symbol.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
       const av = typeof a[sortKey] === 'string'
         ? parseFloat((a[sortKey] as string).replace(/[^0-9.-]/g, ''))
@@ -56,6 +58,9 @@ export default function MarketsPage() {
     </th>
   )
 
+  const topGainer = [...markets].sort((a, b) => b.change24h - a.change24h)[0]
+  const topLoser = [...markets].sort((a, b) => a.change24h - b.change24h)[0]
+
   return (
     <AppShell>
       <div className="p-6 space-y-5">
@@ -68,12 +73,11 @@ export default function MarketsPage() {
         </div>
 
         {/* Summary tiles */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {[
-            { label: 'Total Markets',   value: `${MOCK_MARKETS.length}` },
-            { label: 'Top Gainer',      value: '+4.10% JTO-PERP', color: 'text-long' },
-            { label: 'Top Loser',       value: '-2.30% INJ-PERP', color: 'text-short' },
-            { label: 'Total Vol 24h',   value: '$4.91B' },
+            { label: 'Total Markets',   value: `${markets.length}` },
+            { label: 'Top Gainer',      value: topGainer ? `+${topGainer.change24h.toFixed(2)}% ${topGainer.symbol}` : '--', color: 'text-long' },
+            { label: 'Top Loser',       value: topLoser ? `${topLoser.change24h.toFixed(2)}% ${topLoser.symbol}` : '--', color: 'text-short' },
           ].map((t) => (
             <div key={t.label} className="bg-surface border border-outline-variant p-4">
               <span className="text-label-caps font-ui text-on-surface-variant block">{t.label}</span>
@@ -117,25 +121,28 @@ export default function MarketsPage() {
             <thead>
               <tr className="bg-surface-container border-b border-outline-variant/40">
                 <th className="text-label-caps font-ui text-on-surface-variant px-4 py-2.5 font-normal w-8" />
-                <SortHeader label="Market"        k="pair"         />
+                <SortHeader label="Market"        k="symbol"         />
                 <SortHeader label="Price"         k="price"        />
                 <SortHeader label="24h Change"    k="change24h"    />
                 <SortHeader label="Volume 24h"    k="volume24h"    />
-                <SortHeader label="Open Interest" k="openInterest" />
-                <SortHeader label="Funding Rate"  k="fundingRate"  />
                 <th className="text-label-caps font-ui text-on-surface-variant px-4 py-2.5 font-normal">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-outline-variant/20">
+              {isLoading && (
+                <tr>
+                  <td colSpan={6} className="text-center py-8 text-text-muted">Loading markets...</td>
+                </tr>
+              )}
               {filtered.map((m) => {
                 const isPos = m.change24h >= 0
-                const isFavd = favorites.includes(m.pair)
+                const isFavd = favorites.includes(m.symbol)
                 return (
-                  <tr key={m.pair} className="hover:bg-surface-container transition-colors group">
+                  <tr key={m.symbol} className="hover:bg-surface-container transition-colors group">
                     {/* Star */}
                     <td className="px-4 py-3 w-8">
                       <button
-                        onClick={() => toggleFav(m.pair)}
+                        onClick={() => toggleFav(m.symbol)}
                         className={`transition-colors ${isFavd ? 'text-[#FFB832]' : 'text-outline opacity-40 group-hover:opacity-100'}`}
                       >
                         <Star size={13} fill={isFavd ? 'currentColor' : 'none'} />
@@ -143,7 +150,7 @@ export default function MarketsPage() {
                     </td>
                     {/* Pair */}
                     <td className="px-4 py-3">
-                      <span className="font-data text-data-md text-on-surface font-medium">{m.pair}</span>
+                      <span className="font-data text-data-md text-on-surface font-medium">{m.symbol}</span>
                     </td>
                     {/* Price */}
                     <td className="px-4 py-3 font-data text-data-md text-on-surface">
@@ -158,16 +165,13 @@ export default function MarketsPage() {
                     </td>
                     {/* Volume */}
                     <td className="px-4 py-3 font-data text-data-md text-on-surface">${m.volume24h}</td>
-                    {/* OI */}
-                    <td className="px-4 py-3 font-data text-data-md text-on-surface">${m.openInterest}</td>
-                    {/* Funding */}
-                    <td className={`px-4 py-3 font-data text-data-md ${m.fundingRate >= 0 ? 'text-long' : 'text-short'}`}>
-                      {m.fundingRate >= 0 ? '+' : ''}{(m.fundingRate).toFixed(4)}%
-                    </td>
                     {/* Trade button */}
                     <td className="px-4 py-3">
                       <button
-                        onClick={() => router.push('/')}
+                        onClick={() => {
+                          setMarket(m)
+                          router.push('/trade')
+                        }}
                         className="px-3 py-1 bg-primary-container text-on-primary-container text-label-caps font-ui hover:opacity-90 transition-opacity"
                       >
                         Trade
@@ -178,7 +182,7 @@ export default function MarketsPage() {
               })}
             </tbody>
           </table>
-          {filtered.length === 0 && (
+          {!isLoading && filtered.length === 0 && (
             <div className="py-12 text-center font-ui text-body-sm text-on-surface-variant">
               No markets match your filter.
             </div>
