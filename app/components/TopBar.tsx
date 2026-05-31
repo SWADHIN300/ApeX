@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import ThemeToggle from "./ThemeToggle";
 import { useMarket } from "@/contexts/MarketContext";
@@ -35,6 +36,14 @@ export default function TopBar({
   const [showSearchModal, setShowSearchModal] = useState(false);
   const { network, setNetwork } = useNetwork();
   const [mounted, setMounted] = useState(false);
+  const pathname = usePathname();
+
+  const navItems = [
+    { label: "Trade", href: "/trade" },
+    { label: "Portfolio", href: "/portfolio" },
+    { label: "Stats", href: "/stats" },
+    { label: "Leaderboard", href: "/leaderboard" },
+  ];
 
   useEffect(() => {
     setMounted(true);
@@ -128,22 +137,26 @@ export default function TopBar({
           <span className="t-label-caps hidden lg:block" style={{ fontSize: "11px" }}>Search markets</span>
           <kbd className="hidden xl:block text-[9px] text-text-dim border border-t-border px-1 py-0.5 ml-1">⌘K</kbd>
         </button>
-        <nav className="hidden md:flex shrink-0 items-center gap-4">
-          <Link
-            href="/trade"
-            className="t-label-caps text-primary border-b-2 border-primary pb-1"
-          >
-            Trade
-          </Link>
-          {["Portfolio", "Stats", "Leaderboard"].map((tab) => (
+        <nav className="hidden md:flex shrink-0 items-center gap-4" aria-label="Primary">
+          {navItems.map((item) => {
+            const isActive =
+              pathname === item.href || pathname.startsWith(`${item.href}/`);
+
+            return (
             <Link
-              key={tab}
-              href={`/${tab.toLowerCase()}`}
-              className="t-label-caps text-text-muted hover:text-text-main"
+              key={item.href}
+              href={item.href}
+              aria-current={isActive ? "page" : undefined}
+              className={`t-label-caps border-b-2 pb-1 transition-colors no-underline focus-visible:outline-none focus-visible:text-primary focus-visible:border-primary ${
+                isActive
+                  ? "text-primary border-primary"
+                  : "text-text-muted border-transparent hover:text-text-main hover:border-text-muted"
+              }`}
             >
-              {tab}
+              {item.label}
             </Link>
-          ))}
+            );
+          })}
         </nav>
 
         <div className="hidden xl:flex min-w-0 flex-1 items-center justify-center gap-4 bl-thin pl-5 relative">

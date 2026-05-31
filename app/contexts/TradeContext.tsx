@@ -1,7 +1,6 @@
 "use client";
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useState } from "react";
 import { Position, TradeRecord, PortfolioData } from "@/lib/types";
-import { useNetwork } from "./WalletProvider";
 
 type TradeContextType = {
   positions: Position[];
@@ -19,10 +18,10 @@ type TradeContextType = {
 };
 
 const defaultPortfolio: PortfolioData = {
-  totalValue: 10000,
+  totalValue: 0,
   totalPnl: 0,
   totalPnlPct: 0,
-  availableMargin: 10000,
+  availableMargin: 0,
   usedMargin: 0,
   unrealizedPnl: 0,
 };
@@ -30,37 +29,9 @@ const defaultPortfolio: PortfolioData = {
 const TradeContext = createContext<TradeContextType | undefined>(undefined);
 
 export function TradeProvider({ children }: { children: React.ReactNode }) {
-  const { network } = useNetwork();
   const [positions, setPositions] = useState<Position[]>([]);
   const [trades, setTrades] = useState<TradeRecord[]>([]);
   const [portfolio, setPortfolio] = useState<PortfolioData>(defaultPortfolio);
-
-  // Load from local storage on mount or network change
-  useEffect(() => {
-    const savedPositions = localStorage.getItem(`apex-positions-${network}`);
-    const savedTrades = localStorage.getItem(`apex-trades-${network}`);
-    const savedPortfolio = localStorage.getItem(`apex-portfolio-${network}`);
-
-    if (savedPositions) setPositions(JSON.parse(savedPositions));
-    else setPositions([]);
-
-    if (savedTrades) setTrades(JSON.parse(savedTrades));
-    else setTrades([]);
-
-    if (savedPortfolio) setPortfolio(JSON.parse(savedPortfolio));
-    else setPortfolio(defaultPortfolio);
-  }, [network]);
-
-  // Save to local storage whenever state changes
-  // Use a timeout to prevent saving stale state immediately after network switch
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      localStorage.setItem(`apex-positions-${network}`, JSON.stringify(positions));
-      localStorage.setItem(`apex-trades-${network}`, JSON.stringify(trades));
-      localStorage.setItem(`apex-portfolio-${network}`, JSON.stringify(portfolio));
-    }, 100);
-    return () => clearTimeout(timer);
-  }, [positions, trades, portfolio, network]);
 
   const placeOrder = (
     pair: string,
@@ -147,7 +118,10 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
         usedMargin: prev.usedMargin - marginReleased,
         totalValue: newTotalValue,
         totalPnl: prev.totalPnl + finalPnl,
-        totalPnlPct: ((prev.totalPnl + finalPnl) / 10000) * 100,
+        totalPnlPct:
+          prev.totalValue > 0
+            ? ((prev.totalPnl + finalPnl) / prev.totalValue) * 100
+            : 0,
       };
     });
   };
