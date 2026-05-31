@@ -6,10 +6,10 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import ThemeToggle from "./ThemeToggle";
 import { useMarket } from "@/contexts/MarketContext";
-import { useWallet } from "@solana/wallet-adapter-react";
 import { useNetwork } from "@/contexts/WalletProvider";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import MarketSearchModal from "./MarketSearchModal";
+import AuthActions from "./AuthActions";
 import {
   Bell,
   PanelLeftClose,
@@ -256,6 +256,7 @@ export default function TopBar({
         >
           <Settings size={17} />
         </Link>
+        <AuthActions />
         <div className="hidden sm:flex items-center gap-2 ml-2">
           {mounted && (
             <>

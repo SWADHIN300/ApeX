@@ -4,9 +4,32 @@ import AppShell from '@/components/layout/AppShell'
 import { useMarket } from '@/contexts/MarketContext'
 import { Search, TrendingUp, TrendingDown, Star, ArrowUpDown } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { Ticker } from '@/lib/types'
 
 type SortKey = 'symbol' | 'price' | 'change24h' | 'volume24h'
+
+function SortHeader({
+  label,
+  sortKey,
+  sortField,
+  onSort,
+}: {
+  label: string
+  sortKey: SortKey
+  sortField: SortKey
+  onSort: (key: SortKey) => void
+}) {
+  return (
+    <th
+      className="text-label-caps font-ui text-on-surface-variant px-4 py-2.5 font-normal whitespace-nowrap cursor-pointer hover:text-on-surface transition-colors select-none"
+      onClick={() => onSort(sortField)}
+    >
+      <div className="flex items-center gap-1">
+        {label}
+        <ArrowUpDown size={10} className={sortKey === sortField ? 'text-primary' : 'opacity-30'} />
+      </div>
+    </th>
+  )
+}
 
 export default function MarketsPage() {
   const router = useRouter()
@@ -46,18 +69,6 @@ export default function MarketsPage() {
       return sortAsc ? av - bv : bv - av
     })
 
-  const SortHeader = ({ label, k }: { label: string; k: SortKey }) => (
-    <th
-      className="text-label-caps font-ui text-on-surface-variant px-4 py-2.5 font-normal whitespace-nowrap cursor-pointer hover:text-on-surface transition-colors select-none"
-      onClick={() => handleSort(k)}
-    >
-      <div className="flex items-center gap-1">
-        {label}
-        <ArrowUpDown size={10} className={sortKey === k ? 'text-primary' : 'opacity-30'} />
-      </div>
-    </th>
-  )
-
   const topGainer = [...markets].sort((a, b) => b.change24h - a.change24h)[0]
   const topLoser = [...markets].sort((a, b) => a.change24h - b.change24h)[0]
 
@@ -92,6 +103,7 @@ export default function MarketsPage() {
             {(['all', 'favorites', 'gainers', 'losers'] as const).map((f) => (
               <button
                 key={f}
+                type="button"
                 onClick={() => setFilter(f)}
                 className={`text-label-caps font-ui px-3 py-1.5 transition-colors capitalize ${
                   filter === f
@@ -121,10 +133,10 @@ export default function MarketsPage() {
             <thead>
               <tr className="bg-surface-container border-b border-outline-variant/40">
                 <th className="text-label-caps font-ui text-on-surface-variant px-4 py-2.5 font-normal w-8" />
-                <SortHeader label="Market"        k="symbol"         />
-                <SortHeader label="Price"         k="price"        />
-                <SortHeader label="24h Change"    k="change24h"    />
-                <SortHeader label="Volume 24h"    k="volume24h"    />
+                <SortHeader label="Market" sortKey={sortKey} sortField="symbol" onSort={handleSort} />
+                <SortHeader label="Price" sortKey={sortKey} sortField="price" onSort={handleSort} />
+                <SortHeader label="24h Change" sortKey={sortKey} sortField="change24h" onSort={handleSort} />
+                <SortHeader label="Volume 24h" sortKey={sortKey} sortField="volume24h" onSort={handleSort} />
                 <th className="text-label-caps font-ui text-on-surface-variant px-4 py-2.5 font-normal">Action</th>
               </tr>
             </thead>
@@ -142,7 +154,10 @@ export default function MarketsPage() {
                     {/* Star */}
                     <td className="px-4 py-3 w-8">
                       <button
+                        type="button"
                         onClick={() => toggleFav(m.symbol)}
+                        aria-label={isFavd ? `Remove ${m.symbol} from favorites` : `Add ${m.symbol} to favorites`}
+                        title={isFavd ? `Remove ${m.symbol} from favorites` : `Add ${m.symbol} to favorites`}
                         className={`transition-colors ${isFavd ? 'text-[#FFB832]' : 'text-outline opacity-40 group-hover:opacity-100'}`}
                       >
                         <Star size={13} fill={isFavd ? 'currentColor' : 'none'} />
@@ -168,6 +183,7 @@ export default function MarketsPage() {
                     {/* Trade button */}
                     <td className="px-4 py-3">
                       <button
+                        type="button"
                         onClick={() => {
                           setMarket(m)
                           router.push('/trade')

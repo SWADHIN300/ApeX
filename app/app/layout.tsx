@@ -8,6 +8,11 @@ import { WalletProvider } from "@/contexts/WalletProvider";
 export const metadata: Metadata = {
   title: "ApeX | Perpetual Trading Terminal",
   description: "Next-gen perpetual DEX on Solana",
+  icons: {
+    icon: "/icon.png",
+    shortcut: "/icon.png",
+    apple: "/icon.png",
+  },
 };
 
 export default function RootLayout({
