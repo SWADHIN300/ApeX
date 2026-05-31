@@ -32,7 +32,7 @@ export default function SwapPage() {
   const { network } = useNetwork();
   const { connection } = useConnection();
   const { publicKey, connected, sendTransaction } = useWallet();
-  const tokens = useMemo(() => getSwapTokens(network), [network]);
+  const tokens = useMemo(() => getSwapTokens(), []);
   const [inputToken, setInputToken] = useState<SwapToken | null>(null);
   const [outputToken, setOutputToken] = useState<SwapToken | null>(null);
   const [amount, setAmount] = useState("");
@@ -83,7 +83,7 @@ export default function SwapPage() {
 
     try {
       const params = new URLSearchParams({
-        network,
+        network: "mainnet-beta",
         inputMint: inputToken.mint,
         outputMint: outputToken.mint,
         amount: atomicAmount,
@@ -117,7 +117,7 @@ export default function SwapPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          network,
+          network: "mainnet-beta",
           quoteResponse: quote,
           userPublicKey: publicKey.toBase58(),
         }),
@@ -179,11 +179,7 @@ export default function SwapPage() {
           </div>
 
           <div className="p-6 space-y-5">
-            {network === "devnet" && tokens.length < 2 && (
-              <div className="border border-outline-variant bg-surface-container p-4 font-ui text-body-sm text-on-surface-variant">
-                Configure NEXT_PUBLIC_APEX_DEVNET_USDC_MINT and JUPITER_DEVNET_SWAP_API_URL to enable devnet swaps.
-              </div>
-            )}
+
 
             <div className="grid grid-cols-1 md:grid-cols-[1fr_9rem] gap-4">
               <div>

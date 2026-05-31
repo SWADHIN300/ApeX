@@ -112,23 +112,23 @@ export default function OrderForm() {
   return (
     <section className="col-span-12 lg:col-span-3 min-h-0 min-w-0 b-thin lg:border-l-0 flex flex-col bg-bg-surface p-4 overflow-y-auto no-scrollbar">
       {/* Long / Short toggle */}
-      <div className="flex bg-bg-l1 p-0.5 gap-1 mb-6">
+      <div className="flex bg-bg-l1 p-1 gap-1 mb-6 rounded-md">
         <button
           onClick={() => setSide("Long")}
-          className={`flex-1 py-2 t-label-caps transition-colors ${
+          className={`flex-1 py-2 t-label-caps transition-all rounded-sm ${
             side === "Long"
-              ? "bg-long text-white"
-              : "text-text-dim hover:text-text-main"
+              ? "gradient-long glow-long text-white shadow-md"
+              : "text-text-dim hover:text-text-main hover:bg-bg-l2"
           }`}
         >
           LONG
         </button>
         <button
           onClick={() => setSide("Short")}
-          className={`flex-1 py-2 t-label-caps transition-colors ${
+          className={`flex-1 py-2 t-label-caps transition-all rounded-sm ${
             side === "Short"
-              ? "bg-short text-white"
-              : "text-text-dim hover:text-text-main"
+              ? "gradient-short glow-short text-white shadow-md"
+              : "text-text-dim hover:text-text-main hover:bg-bg-l2"
           }`}
         >
           SHORT
@@ -166,7 +166,7 @@ export default function OrderForm() {
             value={sizeInput}
             onChange={(e) => setSizeInput(e.target.value)}
             placeholder="0.00"
-            className="w-full bg-bg-base border border-t-border focus:border-primary p-3 t-data-md text-text-main outline-none"
+            className="w-full bg-bg-l2 border border-t-border focus:border-primary focus:ring-1 focus:ring-primary p-3 t-data-md text-text-main outline-none rounded-md transition-all"
           />
           <span className="absolute right-3 top-1/2 -translate-y-1/2 t-data-sm text-text-muted">
             USDC
@@ -207,10 +207,10 @@ export default function OrderForm() {
             <button
               key={lev}
               onClick={() => setLeverage(lev)}
-              className={`flex-1 py-1 t-data-sm transition-colors ${
+              className={`flex-1 py-1.5 t-data-sm transition-all rounded-sm ${
                 leverage === lev
-                  ? "bg-primary-ctr border border-primary text-white"
-                  : "bg-bg-l3 border border-t-border-soft text-text-muted hover:bg-bg-l4"
+                  ? "gradient-primary glow-primary border-transparent text-white"
+                  : "bg-bg-l2 border border-t-border-soft text-text-muted hover:bg-bg-l3"
               }`}
             >
               {lev}x
@@ -220,7 +220,7 @@ export default function OrderForm() {
       </div>
 
       {/* Summary box */}
-      <div className="bg-bg-l2 b-thin p-3 space-y-2 mb-6">
+      <div className="bg-bg-l2 border border-t-border p-3 space-y-2 mb-6 rounded-md shadow-sm">
         <div className="flex justify-between t-data-sm">
           <span className="text-text-muted">Liq. Price</span>
           <span className="text-text-main">${liqPrice > 0 ? liqPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "---"}</span>
@@ -256,8 +256,8 @@ export default function OrderForm() {
       <button
         onClick={handlePlaceOrder}
         disabled={isOrderDisabled}
-        className={`w-full py-4 text-white t-headline-md uppercase hover:opacity-90 active:scale-[0.98] transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ${
-          side === "Long" ? "bg-long" : "bg-short"
+        className={`w-full py-4 text-white t-headline-md uppercase hover:opacity-90 active:scale-[0.98] transition-all shadow-lg rounded-md disabled:opacity-50 disabled:cursor-not-allowed ${
+          side === "Long" ? "gradient-long glow-long" : "gradient-short glow-short"
         }`}
       >
         {isAuthLoading
