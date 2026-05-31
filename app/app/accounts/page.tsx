@@ -32,19 +32,22 @@ export default function AccountsPage() {
   const [isDepositing, setIsDepositing] = useState(false)
   const [depositError, setDepositError] = useState('')
   const [depositSignature, setDepositSignature] = useState('')
+  const [balanceError, setBalanceError] = useState('')
 
   useEffect(() => {
     if (publicKey) {
+      setBalanceError('')
       connection.getBalance(publicKey)
         .then((bal) => {
           setSolBalance(bal / 1e9)
         })
-        .catch(err => {
-          console.error("Failed to fetch balance:", err);
-          setSolBalance(0);
+        .catch(() => {
+          setSolBalance(0)
+          setBalanceError('Unable to load SOL balance from the current RPC endpoint.')
         })
     } else {
       setSolBalance(0)
+      setBalanceError('')
     }
   }, [publicKey, connection])
 
@@ -182,6 +185,9 @@ export default function AccountsPage() {
               <span className="text-label-caps font-ui text-on-surface-variant">SOL Balance</span>
               <div className="mt-2">
                 <span className="font-data text-data-lg text-on-surface">{solBalance.toFixed(4)} SOL</span>
+                {balanceError && (
+                  <p className="mt-2 font-ui text-body-sm text-short">{balanceError}</p>
+                )}
               </div>
             </div>
 

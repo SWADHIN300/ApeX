@@ -1,8 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { ExternalLink } from "lucide-react";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useMarket } from "@/contexts/MarketContext";
 import { useTrade } from "@/contexts/TradeContext";
+import { useNetwork } from "@/contexts/WalletProvider";
+import { placeProtocolOrder } from "@/lib/apexProtocol";
 
 type Side = "Long" | "Short";
 type OrderType = "Market" | "Limit" | "Stop";
@@ -10,6 +15,10 @@ type OrderType = "Market" | "Limit" | "Stop";
 const LEVERAGE_PRESETS = [1, 2, 5, 10];
 
 export default function OrderForm() {
+  const router = useRouter();
+  const { connection } = useConnection();
+  const { connected, publicKey, sendTransaction } = useWallet();
+  const { network } = useNetwork();
   const { market } = useMarket();
   const { portfolio, placeOrder } = useTrade();
 
@@ -17,6 +26,11 @@ export default function OrderForm() {
   const [orderType, setOrderType] = useState<OrderType>("Market");
   const [sizeInput, setSizeInput] = useState("");
   const [leverage, setLeverage] = useState(5);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [orderError, setOrderError] = useState("");
+  const [orderSignature, setOrderSignature] = useState("");
 
   const orderTypes: OrderType[] = ["Market", "Limit", "Stop"];
 
@@ -30,11 +44,70 @@ export default function OrderForm() {
       ? price * (1 - 1 / leverage + 0.005)
       : price * (1 + 1 / leverage - 0.005);
 
-  const handlePlaceOrder = () => {
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((data: { user?: unknown }) => {
+        if (!cancelled) setIsLoggedIn(Boolean(data.user));
+      })
+      .catch(() => {
+        if (!cancelled) setIsLoggedIn(false);
+      })
+      .finally(() => {
+        if (!cancelled) setIsAuthLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handlePlaceOrder = async () => {
+    if (!isLoggedIn) {
+      router.push("/login");
+      return;
+    }
+
+    if (!connected || !publicKey) {
+      setOrderError("Connect your Solana wallet before placing an on-chain order.");
+      return;
+    }
+
     if (sizeUsdc <= 0 || !market) return;
-    placeOrder(market.symbol, side, sizeUsdc, leverage, price);
-    setSizeInput(""); // Reset after placing order
+
+    setIsPlacingOrder(true);
+    setOrderError("");
+    setOrderSignature("");
+
+    try {
+      const signature = await placeProtocolOrder({
+        connection,
+        publicKey,
+        sendTransaction,
+        pair: market.symbol,
+        side,
+        price,
+        sizeUsdc,
+        leverage,
+      });
+
+      setOrderSignature(signature);
+      placeOrder(market.symbol, side, sizeUsdc, leverage, price);
+      setSizeInput(""); // Reset after placing order
+    } catch (error) {
+      setOrderError(error instanceof Error ? error.message : "Could not place on-chain order.");
+    } finally {
+      setIsPlacingOrder(false);
+    }
   };
+
+  const isOrderDisabled =
+    isAuthLoading ||
+    isPlacingOrder ||
+    (isLoggedIn && connected && (sizeUsdc <= 0 || marginReq > portfolio.availableMargin));
+  const explorerCluster = network === "devnet" ? "?cluster=devnet" : "";
 
   return (
     <section className="col-span-12 lg:col-span-3 min-h-0 min-w-0 b-thin lg:border-l-0 flex flex-col bg-bg-surface p-4 overflow-y-auto no-scrollbar">
@@ -162,15 +235,40 @@ export default function OrderForm() {
         </div>
       </div>
 
+      {orderError && (
+        <div className="mb-3 b-thin border-short/40 bg-short/10 p-3 t-body-sm text-short">
+          {orderError}
+        </div>
+      )}
+
+      {orderSignature && (
+        <a
+          href={`https://explorer.solana.com/tx/${orderSignature}${explorerCluster}`}
+          target="_blank"
+          rel="noreferrer"
+          className="mb-3 flex items-center gap-2 t-body-sm text-long no-underline hover:underline"
+        >
+          On-chain order confirmed <ExternalLink size={13} />
+        </a>
+      )}
+
       {/* Action button */}
       <button
         onClick={handlePlaceOrder}
-        disabled={sizeUsdc <= 0 || marginReq > portfolio.availableMargin}
+        disabled={isOrderDisabled}
         className={`w-full py-4 text-white t-headline-md uppercase hover:opacity-90 active:scale-[0.98] transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ${
           side === "Long" ? "bg-long" : "bg-short"
         }`}
       >
-        Place {side} Order
+        {isAuthLoading
+          ? "Checking Login"
+          : isPlacingOrder
+            ? "Placing On-Chain"
+            : !isLoggedIn
+              ? "Log in to Place Order"
+              : connected
+            ? `Place ${side} Order`
+            : "Connect Wallet to Place Order"}
       </button>
     </section>
   );

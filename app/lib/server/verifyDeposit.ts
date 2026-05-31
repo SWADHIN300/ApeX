@@ -1,5 +1,4 @@
 import {
-  clusterApiUrl,
   Connection,
   LAMPORTS_PER_SOL,
   PublicKey,
@@ -7,6 +6,7 @@ import {
 import { getAssociatedTokenAddress } from "@solana/spl-token";
 import type { ParsedInstruction, PartiallyDecodedInstruction } from "@solana/web3.js";
 import type { LedgerAsset, LedgerNetwork } from "@/lib/ledgerClient";
+import { getServerSolanaRpcEndpoint } from "@/lib/solanaRpc";
 
 type ParsedDeposit = {
   amount: number;
@@ -32,12 +32,7 @@ function isParsedInstruction(
 }
 
 function getConnection(network: LedgerNetwork) {
-  const endpoint =
-    process.env.SOLANA_RPC_URL ??
-    process.env.NEXT_PUBLIC_SOLANA_RPC_URL ??
-    clusterApiUrl(network);
-
-  return new Connection(endpoint, "confirmed");
+  return new Connection(getServerSolanaRpcEndpoint(network), "confirmed");
 }
 
 export async function verifyDepositTransaction({
