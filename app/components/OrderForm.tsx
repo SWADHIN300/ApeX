@@ -94,7 +94,9 @@ export default function OrderForm() {
   };
 
   const isOrderDisabled =
-    txStatus !== "idle" ||
+    txStatus === "confirming" ||
+    txStatus === "signing" ||
+    txStatus === "submitted" ||
     !connected ||
     !publicKey ||
     sizeUsdc <= 0 ||
@@ -312,6 +314,13 @@ export default function OrderForm() {
       >
         {connected ? `Place ${side} Order` : "Connect Wallet to Place Order"}
       </button>
+
+      {/* Insufficient Margin Warning */}
+      {connected && sizeUsdc > 0 && marginReq > portfolio.availableMargin && (
+        <div className="mt-3 text-center t-body-sm text-short bg-short/10 border border-short/40 rounded-md p-2">
+          Insufficient Margin. Please deposit USDC in the <a href="/accounts" className="underline font-bold">Accounts</a> tab.
+        </div>
+      )}
     </section>
   );
 }
