@@ -243,8 +243,8 @@ function writeU64LE(buffer: Buffer, value: bigint, offset: number) {
   if (typeof buffer.writeBigUInt64LE === 'function') {
     buffer.writeBigUInt64LE(value, offset);
   } else {
-    const low = Number(value & 0xffffffffn);
-    const high = Number((value >> 32n) & 0xffffffffn);
+    const low = Number(value & BigInt(0xffffffff));
+    const high = Number((value >> BigInt(32)) & BigInt(0xffffffff));
     buffer.writeUInt32LE(low, offset);
     buffer.writeUInt32LE(high, offset + 4);
   }
@@ -256,7 +256,7 @@ function readU64LE(buffer: Buffer, offset: number): bigint {
   }
   const low = BigInt(buffer.readUInt32LE(offset));
   const high = BigInt(buffer.readUInt32LE(offset + 4));
-  return (high << 32n) | low;
+  return (high << BigInt(32)) | low;
 }
 
 function readI64LE(buffer: Buffer, offset: number): bigint {
@@ -265,7 +265,7 @@ function readI64LE(buffer: Buffer, offset: number): bigint {
   }
   const low = BigInt(buffer.readUInt32LE(offset));
   const high = BigInt(buffer.readInt32LE(offset + 4));
-  return (high << 32n) | low;
+  return (high << BigInt(32)) | low;
 }
 
 function toProtocolAmount(value: number, decimals: number) {
