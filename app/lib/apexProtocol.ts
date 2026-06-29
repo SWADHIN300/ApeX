@@ -113,13 +113,13 @@ function readMarketVault(data: Buffer) {
 
 function readProtocolOrder(data: Buffer, offset: number) {
   const side = data.readUInt8(offset + 32);
-  const price = Number(data.readBigUInt64LE(offset + 33)) / PRICE_DECIMALS;
-  const size = Number(data.readBigUInt64LE(offset + 41)) / SIZE_DECIMALS;
+  const price = Number(readU64LE(data, offset + 33)) / PRICE_DECIMALS;
+  const size = Number(readU64LE(data, offset + 41)) / SIZE_DECIMALS;
   const lockedCollateral =
-    Number(data.readBigUInt64LE(offset + 49)) / SIZE_DECIMALS;
+    Number(readU64LE(data, offset + 49)) / SIZE_DECIMALS;
   const leverage = data.readUInt8(offset + 57);
   const status = data.readUInt8(offset + 58);
-  const createdAt = Number(data.readBigInt64LE(offset + 59));
+  const createdAt = Number(readI64LE(data, offset + 59));
 
   return { side, price, size, lockedCollateral, leverage, status, createdAt };
 }
@@ -193,8 +193,8 @@ export type ProtocolMarginAccount = {
 };
 
 export function decodeProtocolMarginAccount(data: Buffer): ProtocolMarginAccount {
-  const depositedCollateral = Number(data.readBigUInt64LE(8 + 32 + 32)) / SIZE_DECIMALS;
-  const lockedCollateral = Number(data.readBigUInt64LE(8 + 32 + 32 + 8)) / SIZE_DECIMALS;
+  const depositedCollateral = Number(readU64LE(data, 8 + 32 + 32)) / SIZE_DECIMALS;
+  const lockedCollateral = Number(readU64LE(data, 8 + 32 + 32 + 8)) / SIZE_DECIMALS;
 
   return {
     depositedCollateral,
@@ -240,7 +240,32 @@ export function subscribeProtocolMarginAccount(
   };
 }
 function writeU64LE(buffer: Buffer, value: bigint, offset: number) {
-  buffer.writeBigUInt64LE(value, offset);
+  if (typeof buffer.writeBigUInt64LE === 'function') {
+    buffer.writeBigUInt64LE(value, offset);
+  } else {
+    const low = Number(value & 0xffffffffn);
+    const high = Number((value >> 32n) & 0xffffffffn);
+    buffer.writeUInt32LE(low, offset);
+    buffer.writeUInt32LE(high, offset + 4);
+  }
+}
+
+function readU64LE(buffer: Buffer, offset: number): bigint {
+  if (typeof buffer.readBigUInt64LE === 'function') {
+    return buffer.readBigUInt64LE(offset);
+  }
+  const low = BigInt(buffer.readUInt32LE(offset));
+  const high = BigInt(buffer.readUInt32LE(offset + 4));
+  return (high << 32n) | low;
+}
+
+function readI64LE(buffer: Buffer, offset: number): bigint {
+  if (typeof buffer.readBigInt64LE === 'function') {
+    return buffer.readBigInt64LE(offset);
+  }
+  const low = BigInt(buffer.readUInt32LE(offset));
+  const high = BigInt(buffer.readInt32LE(offset + 4));
+  return (high << 32n) | low;
 }
 
 function toProtocolAmount(value: number, decimals: number) {
