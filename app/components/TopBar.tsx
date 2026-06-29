@@ -259,11 +259,11 @@ export default function TopBar({
           {/* Market stats (xl+) */}
           <div className="hidden xl:flex min-w-0 flex-1 items-center gap-5 bl-thin pl-5">
             {/* Inline search */}
-            <div className="relative flex w-44 shrink-0 items-center">
+            <div className="relative flex w-52 shrink-0 items-center">
               <Search size={13} className="absolute left-3 text-text-dim pointer-events-none" />
               <input
                 type="text"
-                placeholder="Search..."
+                placeholder="Search all coins..."
                 value={searchQuery}
                 onChange={(e) => { setSearchQuery(e.target.value); setIsSearchOpen(true); }}
                 onFocus={() => setIsSearchOpen(true)}
@@ -276,45 +276,59 @@ export default function TopBar({
                   outline: "none",
                 }}
               />
-              {isSearchOpen && searchQuery && (
+              {isSearchOpen && (
                 <div
-                  className="absolute top-full left-0 mt-1.5 w-full z-50 shadow-2xl overflow-hidden"
+                  className="absolute top-full left-0 mt-1.5 z-50 shadow-2xl overflow-hidden"
                   style={{
+                    width: "320px",
                     background: "var(--bg-l1)",
                     border: "0.5px solid var(--border-soft)",
                     borderRadius: "6px",
                     boxShadow: "0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px var(--border)",
                   }}
                 >
-                  {filteredMarkets.length > 0 ? (
-                    filteredMarkets.map((m) => (
-                      <div
-                        key={m.symbol}
-                        className="px-3 py-2 cursor-pointer t-data-sm text-text-main flex
-                          items-center gap-2 transition-colors"
-                        style={{ transition: "background 0.15s" }}
-                        onMouseEnter={(e) => {
-                          (e.currentTarget as HTMLElement).style.background = "var(--bg-l3)";
-                        }}
-                        onMouseLeave={(e) => {
-                          (e.currentTarget as HTMLElement).style.background = "transparent";
-                        }}
-                        onMouseDown={() => {
-                          setMarket(m);
-                          setSearchQuery("");
-                          setIsSearchOpen(false);
-                        }}
-                      >
-                        <CoinIcon symbol={m.symbol} size={18} />
-                        <span className="font-medium flex-1">{m.symbol}</span>
-                        <span style={{ color: m.change24h >= 0 ? "var(--long)" : "var(--short)" }}>
-                          {m.change24h > 0 ? "+" : ""}{m.change24h.toFixed(2)}%
-                        </span>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="px-3 py-2 t-body-sm text-text-dim">No markets found</div>
-                  )}
+                  {/* Market count header */}
+                  <div
+                    className="px-3 py-1.5 t-label-caps text-text-dim bb-thin flex justify-between"
+                  >
+                    <span>{searchQuery ? "Results" : "All Markets"}</span>
+                    <span>{filteredMarkets.length} coins</span>
+                  </div>
+                  {/* Scrollable list */}
+                  <div style={{ maxHeight: "320px", overflowY: "auto" }}>
+                    {filteredMarkets.length > 0 ? (
+                      filteredMarkets.slice(0, 50).map((m) => (
+                        <div
+                          key={m.symbol}
+                          className="px-3 py-2 cursor-pointer t-data-sm text-text-main flex
+                            items-center gap-2 transition-colors"
+                          style={{ transition: "background 0.15s" }}
+                          onMouseEnter={(e) => {
+                            (e.currentTarget as HTMLElement).style.background = "var(--bg-l3)";
+                          }}
+                          onMouseLeave={(e) => {
+                            (e.currentTarget as HTMLElement).style.background = "transparent";
+                          }}
+                          onMouseDown={() => {
+                            setMarket(m);
+                            setSearchQuery("");
+                            setIsSearchOpen(false);
+                          }}
+                        >
+                          <CoinIcon symbol={m.symbol} size={18} />
+                          <span className="font-medium flex-1">{m.symbol.replace("-PERP", "")}</span>
+                          <span
+                            className="text-[10px]"
+                            style={{ color: m.change24h >= 0 ? "var(--long)" : "var(--short)" }}
+                          >
+                            {m.change24h > 0 ? "+" : ""}{m.change24h.toFixed(2)}%
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="px-3 py-4 t-body-sm text-text-dim text-center">No markets found</div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
