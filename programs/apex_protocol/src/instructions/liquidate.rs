@@ -9,7 +9,7 @@ pub struct Liquidate<'info> {
     pub keeper: Signer<'info>,
     #[account(mut, has_one = vault, has_one = oracle)]
     pub market: Account<'info, Market>,
-    #[account(mut, close = keeper)]
+    #[account(mut, close = keeper, has_one = market)]
     pub position: Account<'info, Position>,
     #[account(mut)]
     pub vault: Account<'info, TokenAccount>,

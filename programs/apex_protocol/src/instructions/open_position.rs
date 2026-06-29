@@ -10,7 +10,7 @@ pub struct OpenPosition<'info> {
     #[account(mut, has_one = vault, has_one = oracle)]
     pub market: Account<'info, Market>,
     #[account(
-        init,
+        init_if_needed,
         payer = trader,
         space = 8 + Position::LEN,
         seeds = [b"position", market.key().as_ref(), trader.key().as_ref()],
@@ -38,9 +38,8 @@ pub fn handler(
 
     let clock = Clock::get()?;
     let entry_price = get_oracle_price(&ctx.accounts.oracle, &clock)?;
-    let notional = calc_notional(collateral, leverage)?;
-    let size = calc_size(notional, entry_price)?;
-    let liquidation_price = calc_liquidation_price(entry_price, leverage, &side)?;
+    let added_notional = calc_notional(collateral, leverage)?;
+    let added_size = calc_size(added_notional, entry_price)?;
 
     token::transfer(
         CpiContext::new(
@@ -55,31 +54,68 @@ pub fn handler(
     )?;
 
     let position = &mut ctx.accounts.position;
-    position.owner = ctx.accounts.trader.key();
-    position.market = ctx.accounts.market.key();
-    position.side = side.clone();
-    position.collateral = collateral;
-    position.size = size;
-    position.entry_price = entry_price;
-    position.leverage = leverage;
-    position.liquidation_price = liquidation_price;
-    position.unrealized_pnl = 0;
-    position.funding_settled = 0;
-    position.created_at = clock.unix_timestamp;
-    position.bump = ctx.bumps.position;
+    let is_new_position = position.owner == Pubkey::default() || position.size == 0;
+
+    if is_new_position {
+        position.owner = ctx.accounts.trader.key();
+        position.market = ctx.accounts.market.key();
+        position.side = side.clone();
+        position.collateral = collateral;
+        position.size = added_size;
+        position.entry_price = entry_price;
+        position.leverage = leverage;
+        position.liquidation_price = calc_liquidation_price(entry_price, leverage, &side)?;
+        position.unrealized_pnl = 0;
+        position.funding_settled = 0;
+        position.created_at = clock.unix_timestamp;
+        position.bump = ctx.bumps.position;
+    } else {
+        require!(
+            position.owner == ctx.accounts.trader.key(),
+            ApexError::Unauthorized
+        );
+        require!(
+            position.market == ctx.accounts.market.key(),
+            ApexError::Unauthorized
+        );
+        require!(position.side == side, ApexError::PositionSideMismatch);
+
+        let current_notional = calc_notional(position.collateral, position.leverage)?;
+        let total_notional = current_notional
+            .checked_add(added_notional)
+            .ok_or(ApexError::MathOverflow)?;
+        let total_collateral = position
+            .collateral
+            .checked_add(collateral)
+            .ok_or(ApexError::MathOverflow)?;
+        let total_size = position
+            .size
+            .checked_add(added_size)
+            .ok_or(ApexError::MathOverflow)?;
+        let blended_entry =
+            weighted_average_price(position.size, position.entry_price, added_size, entry_price)?;
+        let effective_leverage = calc_effective_leverage(total_collateral, total_notional)?;
+
+        position.collateral = total_collateral;
+        position.size = total_size;
+        position.entry_price = blended_entry;
+        position.leverage = effective_leverage;
+        position.liquidation_price =
+            calc_liquidation_price(blended_entry, effective_leverage, &position.side)?;
+    }
 
     let market = &mut ctx.accounts.market;
     match side {
         Side::Long => {
             market.open_interest_long = market
                 .open_interest_long
-                .checked_add(notional)
+                .checked_add(added_notional)
                 .ok_or(ApexError::MathOverflow)?;
         }
         Side::Short => {
             market.open_interest_short = market
                 .open_interest_short
-                .checked_add(notional)
+                .checked_add(added_notional)
                 .ok_or(ApexError::MathOverflow)?;
         }
     }
@@ -87,10 +123,10 @@ pub fn handler(
     emit!(PositionOpened {
         owner: ctx.accounts.trader.key(),
         side,
-        entry_price,
-        size,
-        leverage,
-        liquidation_price,
+        entry_price: position.entry_price,
+        size: position.size,
+        leverage: position.leverage,
+        liquidation_price: position.liquidation_price,
     });
 
     Ok(())

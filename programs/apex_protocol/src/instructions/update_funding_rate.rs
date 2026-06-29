@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use anchor_lang::AnchorSerialize;
 
 use crate::*;
 
@@ -45,12 +46,22 @@ pub fn handler(ctx: Context<UpdateFundingRate>) -> Result<()> {
         if account_info.owner != ctx.program_id {
             continue;
         }
+        // Position accounts must be passed as writable to receive updates.
+        require!(account_info.is_writable, ApexError::Unauthorized);
+
         let mut data = account_info.try_borrow_mut_data()?;
         if data.len() < 8 {
             continue;
         }
-        let mut slice: &[u8] = &data[8..];
-        let mut position = Position::try_deserialize_unchecked(&mut slice)?;
+
+        // Use try_deserialize which validates the 8-byte discriminator,
+        // preventing deserialization of arbitrary accounts.
+        let mut slice: &[u8] = &data;
+        let mut position = match Position::try_deserialize(&mut slice) {
+            Ok(p) => p,
+            Err(_) => continue, // not a Position account — skip
+        };
+
         if position.market != market.key() {
             continue;
         }
@@ -78,8 +89,11 @@ pub fn handler(ctx: Context<UpdateFundingRate>) -> Result<()> {
             .funding_settled
             .checked_add(market.funding_rate)
             .ok_or(ApexError::MathOverflow)?;
+
+        // Serialize ONLY the struct fields (no discriminator prefix) via
+        // AnchorSerialize so it maps exactly to data[8..].
         let mut out = Vec::with_capacity(Position::LEN);
-        position.try_serialize(&mut out)?;
+        AnchorSerialize::serialize(&position, &mut out)?;
         data[8..8 + out.len()].copy_from_slice(&out);
     }
 

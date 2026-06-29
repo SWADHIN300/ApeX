@@ -142,20 +142,51 @@ export default function MarketSearchModal({ onClose }: { onClose: () => void }) 
   const { markets, setMarket } = useMarket();
   const router = useRouter();
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [favorites, setFavorites] = useState<string[]>([]);
   const [tab, setTab] = useState<"all" | "favorites" | "gainers" | "losers">("all");
   const inputRef = useRef<HTMLInputElement>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
 
   // Focus input on open
   useEffect(() => {
     inputRef.current?.focus();
     const saved = localStorage.getItem("apex-favorites");
     if (saved) setFavorites(JSON.parse(saved));
+    
+    // Prevent scrolling behind modal
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "auto";
+    };
   }, []);
 
-  // ESC to close
+  // Debounce search query
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const timer = setTimeout(() => setDebouncedQuery(query), 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  // ESC to close and Focus Trap
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { 
+      if (e.key === "Escape") onClose(); 
+      if (e.key === "Tab" && modalRef.current) {
+        const focusable = modalRef.current.querySelectorAll(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0] as HTMLElement;
+        const last = focusable[focusable.length - 1] as HTMLElement;
+        if (e.shiftKey && document.activeElement === first) {
+          last.focus();
+          e.preventDefault();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          first.focus();
+          e.preventDefault();
+        }
+      }
+    };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
@@ -177,7 +208,7 @@ export default function MarketSearchModal({ onClose }: { onClose: () => void }) 
   // Filter + sort
   const filtered = markets
     .filter((m) => {
-      const q = query.toLowerCase();
+      const q = debouncedQuery.toLowerCase();
       const match = m.symbol.toLowerCase().includes(q) || m.symbol.replace("-PERP", "").toLowerCase().includes(q);
       if (!match) return false;
       if (tab === "favorites") return favorites.includes(m.symbol);
@@ -208,7 +239,12 @@ export default function MarketSearchModal({ onClose }: { onClose: () => void }) 
       />
 
       {/* Modal */}
-      <div className="fixed left-1/2 top-16 z-[1000] w-full max-w-3xl -translate-x-1/2 flex flex-col bg-bg-l1 border border-t-border shadow-2xl"
+      <div 
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Search Markets"
+        className="fixed left-1/2 top-16 z-[1000] w-full max-w-3xl -translate-x-1/2 flex flex-col bg-bg-l1 border border-t-border shadow-2xl rounded-md"
         style={{ maxHeight: "calc(100vh - 80px)" }}
       >
         {/* Search Header */}

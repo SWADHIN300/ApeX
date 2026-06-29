@@ -1,0 +1,6 @@
+app/.next
+app/node_modules
+target
+node_modules
+.chrome-profile
+.edge-profile

@@ -55,21 +55,23 @@ export default function OrderBook() {
         <span className="t-label-caps text-text-main">Order Book</span>
       </div>
 
-      <div className="flex-grow overflow-hidden flex flex-col">
+      <div className="flex-grow overflow-hidden flex flex-col" role="table" aria-label="Order Book">
         {/* Column header */}
-        <div className="grid grid-cols-[minmax(4.5rem,1fr)_minmax(3rem,0.75fr)_minmax(3rem,0.75fr)] px-3 py-2 t-label-caps text-text-dim bg-bg-l2">
-          <span>Price</span>
-          <span className="text-right">Size</span>
-          <span className="text-right">Total</span>
+        <div role="row" className="grid grid-cols-[minmax(4.5rem,1fr)_minmax(3rem,0.75fr)_minmax(3rem,0.75fr)] px-3 py-2 t-label-caps text-text-dim bg-bg-l2">
+          <span role="columnheader">Price</span>
+          <span role="columnheader" className="text-right">Size</span>
+          <span role="columnheader" className="text-right">Total</span>
         </div>
 
         {/* Asks (reversed: lowest ask nearest spread) */}
-        <div className="flex-grow overflow-hidden flex flex-col-reverse justify-end">
+        <div className="flex-grow overflow-hidden flex flex-col-reverse justify-end" role="rowgroup">
           {sortedAsks.map((a, i) => {
             const depth = (askTotals[i] / maxTotal) * 100;
             return (
               <div
                 key={`a${i}`}
+                role="row"
+                aria-label={`Ask: $${fmtPrice(a.price)}, Size: ${fmtSize(a.size)}`}
                 className="relative h-5 grid grid-cols-[minmax(4.5rem,1fr)_minmax(3rem,0.75fr)_minmax(3rem,0.75fr)] items-center px-3 t-data-sm hover:bg-bg-l3 cursor-pointer"
               >
                 <div
@@ -78,10 +80,11 @@ export default function OrderBook() {
                     width: `${Math.min(depth, 95)}%`,
                     transition: "width 0.3s ease",
                   }}
+                  aria-hidden="true"
                 />
-                <span className="text-short z-10">{fmtPrice(a.price)}</span>
-                <span className="text-right z-10">{fmtSize(a.size)}</span>
-                <span className="text-right z-10 text-text-muted">
+                <span role="cell" className="text-short z-10">{fmtPrice(a.price)}</span>
+                <span role="cell" className="text-right z-10">{fmtSize(a.size)}</span>
+                <span role="cell" className="text-right z-10 text-text-muted">
                   {fmtTotal(askTotals[i])}
                 </span>
               </div>
@@ -91,7 +94,7 @@ export default function OrderBook() {
 
         {/* Spread */}
         <div className="py-2 px-3 border-y border-t-border-soft bg-bg-l2 flex items-center justify-between gap-2">
-          <span className="t-data-md text-text-main whitespace-nowrap">
+          <span className="t-data-md text-text-main whitespace-nowrap" aria-label={`Current price: $${market?.price ? fmtPrice(market.price) : "---"}`}>
             ${market?.price ? fmtPrice(market.price) : "---"}
           </span>
           <span className="t-label-caps text-text-muted whitespace-nowrap">
@@ -100,12 +103,14 @@ export default function OrderBook() {
         </div>
 
         {/* Bids */}
-        <div className="flex-grow overflow-hidden">
+        <div className="flex-grow overflow-hidden" role="rowgroup">
           {sortedBids.map((b, i) => {
             const depth = (bidTotals[i] / maxTotal) * 100;
             return (
               <div
                 key={`b${i}`}
+                role="row"
+                aria-label={`Bid: $${fmtPrice(b.price)}, Size: ${fmtSize(b.size)}`}
                 className="relative h-5 grid grid-cols-[minmax(4.5rem,1fr)_minmax(3rem,0.75fr)_minmax(3rem,0.75fr)] items-center px-3 t-data-sm hover:bg-bg-l3 cursor-pointer"
               >
                 <div
@@ -114,10 +119,11 @@ export default function OrderBook() {
                     width: `${Math.min(depth, 95)}%`,
                     transition: "width 0.3s ease",
                   }}
+                  aria-hidden="true"
                 />
-                <span className="text-long z-10">{fmtPrice(b.price)}</span>
-                <span className="text-right z-10">{fmtSize(b.size)}</span>
-                <span className="text-right z-10 text-text-muted">
+                <span role="cell" className="text-long z-10">{fmtPrice(b.price)}</span>
+                <span role="cell" className="text-right z-10">{fmtSize(b.size)}</span>
+                <span role="cell" className="text-right z-10 text-text-muted">
                   {fmtTotal(bidTotals[i])}
                 </span>
               </div>

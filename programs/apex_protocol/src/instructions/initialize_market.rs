@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, Token, TokenAccount};
 
-use crate::state::{Market, OrderBook};
+use crate::*;
 
 #[derive(Accounts)]
 pub struct InitializeMarket<'info> {
@@ -37,12 +37,17 @@ pub struct InitializeMarket<'info> {
 }
 
 pub fn handler(ctx: Context<InitializeMarket>, fee_rate: u64, oracle: Pubkey) -> Result<()> {
+    // Fee rate must be between 1 and 100 basis points (0.01% – 1%).
+    require!(fee_rate > 0 && fee_rate <= 100, ApexError::InvalidFeeRate);
+
     let market = &mut ctx.accounts.market;
     market.authority = ctx.accounts.authority.key();
     market.oracle = oracle;
     market.vault = ctx.accounts.vault.key();
     market.base_mint = ctx.accounts.base_mint.key();
     market.insurance_fund = 0;
+    market.liquidity_pool = 0;
+    market.pending_payouts_total = 0;
     market.open_interest_long = 0;
     market.open_interest_short = 0;
     market.funding_rate = 0;

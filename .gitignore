@@ -11,3 +11,6 @@ app/.next
 app/build.log
 app/next-localhost*.log
 .ledger
+
+.vercel
+.env*

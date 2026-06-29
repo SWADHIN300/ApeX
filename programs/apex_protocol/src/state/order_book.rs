@@ -16,13 +16,14 @@ pub struct Order {
     pub side: Side,
     pub price: u64,
     pub size: u64,
+    pub locked_collateral: u64,
     pub leverage: u8,
     pub status: OrderStatus,
     pub created_at: i64,
 }
 
 impl Order {
-    pub const LEN: usize = 32 + 1 + 8 + 8 + 1 + 1 + 8;
+    pub const LEN: usize = 32 + 1 + 8 + 8 + 8 + 1 + 1 + 8;
 }
 
 #[account]

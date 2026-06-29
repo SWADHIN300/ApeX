@@ -4,29 +4,15 @@ import React, {
   useCallback,
   useContext,
   useEffect,
-  useRef,
   useState,
 } from "react";
-import { useWallet } from "@solana/wallet-adapter-react";
-import { Position, TradeRecord, PortfolioData } from "@/lib/types";
-import { fetchLedgerBalance } from "@/lib/ledgerClient";
-import { useNetwork } from "./WalletProvider";
-
-type TradeContextType = {
-  positions: Position[];
-  trades: TradeRecord[];
-  portfolio: PortfolioData;
-  placeOrder: (
-    pair: string,
-    side: "Long" | "Short",
-    sizeUsdc: number,
-    leverage: number,
-    price: number
-  ) => void;
-  closePosition: (id: string, currentPrice: number) => void;
-  updatePositionsWithMarkPrice: (pair: string, markPrice: number) => void;
-  refreshLedgerBalance: () => Promise<void>;
-};
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { useMarket } from "@/contexts/MarketContext";
+import {
+  fetchProtocolMarginAccount,
+  subscribeProtocolMarginAccount,
+} from "@/lib/apexProtocol";
+import { Position, PortfolioData, TradeRecord } from "@/lib/types";
 
 const defaultPortfolio: PortfolioData = {
   totalValue: 0,
@@ -37,110 +23,95 @@ const defaultPortfolio: PortfolioData = {
   unrealizedPnl: 0,
 };
 
+type TradeContextType = {
+  positions: Position[];
+  trades: TradeRecord[];
+  portfolio: PortfolioData;
+  placeOrder: (
+    pair: string,
+    side: "Long" | "Short",
+    sizeUsdc: number,
+    leverage: number,
+    price: number,
+  ) => void;
+  closePosition: (id: string, currentPrice: number) => void;
+  updatePositionsWithMarkPrice: (pair: string, markPrice: number) => void;
+  refreshLedgerBalance: () => Promise<void>;
+};
+
 const TradeContext = createContext<TradeContextType | undefined>(undefined);
 
 export function TradeProvider({ children }: { children: React.ReactNode }) {
+  const { connection } = useConnection();
   const { publicKey } = useWallet();
-  const { network } = useNetwork();
+  const { market } = useMarket();
   const [positions, setPositions] = useState<Position[]>([]);
   const [trades, setTrades] = useState<TradeRecord[]>([]);
   const [portfolio, setPortfolio] = useState<PortfolioData>(defaultPortfolio);
-  const positionsRef = useRef<Position[]>([]);
 
-  useEffect(() => {
-    positionsRef.current = positions;
-  }, [positions]);
+  const applyMargin = useCallback((margin: {
+    depositedCollateral: number;
+    lockedCollateral: number;
+    availableCollateral: number;
+  }) => {
+    setPortfolio((prev) => {
+      const equity = margin.depositedCollateral + prev.unrealizedPnl;
+
+      return {
+        ...prev,
+        totalValue: equity,
+        availableMargin: margin.availableCollateral,
+        usedMargin: margin.lockedCollateral,
+        totalPnlPct: equity > 0 ? (prev.totalPnl / equity) * 100 : 0,
+      };
+    });
+  }, []);
 
   const refreshLedgerBalance = useCallback(async () => {
-    if (!publicKey) {
+    if (!publicKey || !market) {
       setPortfolio(defaultPortfolio);
       setPositions((prev) => (prev.length > 0 ? [] : prev));
       setTrades((prev) => (prev.length > 0 ? [] : prev));
       return;
     }
 
-    const ledger = await fetchLedgerBalance({
-      wallet: publicKey.toBase58(),
-      network,
-    });
-    const currentPositions = positionsRef.current;
-    const usedMargin = currentPositions.reduce((total, position) => {
-      return total + (position.size * position.entryPrice) / position.leverage;
-    }, 0);
-    const unrealizedPnl = currentPositions.reduce(
-      (total, position) => total + position.pnl,
-      0,
+    const margin = await fetchProtocolMarginAccount(
+      connection,
+      market.symbol,
+      publicKey,
     );
-    const equity = ledger.balances.USDC + unrealizedPnl;
-
-    setPortfolio((prev) => ({
-      ...prev,
-      totalValue: equity,
-      availableMargin: Math.max(0, ledger.balances.USDC - usedMargin),
-      usedMargin,
-      unrealizedPnl,
-      totalPnlPct: equity > 0 ? (prev.totalPnl / equity) * 100 : 0,
-    }));
-  }, [network, publicKey]);
+    applyMargin(margin);
+  }, [applyMargin, connection, market, publicKey]);
 
   useEffect(() => {
     void refreshLedgerBalance();
   }, [refreshLedgerBalance]);
 
-  const placeOrder = (
-    pair: string,
-    side: "Long" | "Short",
-    sizeUsdc: number,
-    leverage: number,
-    price: number
-  ) => {
-    const marginReq = sizeUsdc / leverage;
-    if (marginReq > portfolio.availableMargin) {
-      alert("Insufficient margin!");
+  useEffect(() => {
+    if (!publicKey || !market) return;
+
+    try {
+      return subscribeProtocolMarginAccount(
+        connection,
+        market.symbol,
+        publicKey,
+        applyMargin,
+      );
+    } catch {
       return;
     }
+  }, [applyMargin, connection, market, publicKey]);
 
-    const fee = sizeUsdc * 0.0004; // 0.04% fee
-    const sizeBase = sizeUsdc / price;
-
-    // Calc approx liq price (simplified)
-    const liqPrice =
-      side === "Long"
-        ? price * (1 - 1 / leverage + 0.005)
-        : price * (1 + 1 / leverage - 0.005);
-
-    const newPosition: Position = {
-      id: Math.random().toString(36).substring(7),
-      pair,
-      side,
-      leverage,
-      size: sizeBase,
-      entryPrice: price,
-      markPrice: price,
-      liqPrice,
-      pnl: 0,
-      roi: 0,
-    };
-
-    setPositions((prev) => [...prev, newPosition]);
-
-    setPortfolio((prev) => ({
-      ...prev,
-      availableMargin: prev.availableMargin - marginReq - fee,
-      usedMargin: prev.usedMargin + marginReq,
-      totalValue: prev.totalValue - fee, // Fee decreases total value
-    }));
+  const placeOrder = () => {
+    void refreshLedgerBalance();
   };
 
   const closePosition = (id: string, currentPrice: number) => {
     const pos = positions.find((p) => p.id === id);
     if (!pos) return;
 
-    // Record trade
     const sizeUsdc = pos.size * pos.entryPrice;
     const fee = sizeUsdc * 0.0004;
-
-    // Actual close PnL
     const diff =
       pos.side === "Long"
         ? currentPrice - pos.entryPrice
@@ -161,61 +132,33 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
 
     setTrades((prev) => [newTrade, ...prev]);
     setPositions((prev) => prev.filter((p) => p.id !== id));
-
-    const marginReleased = sizeUsdc / pos.leverage;
-
-    setPortfolio((prev) => {
-      const newTotalValue = prev.totalValue + finalPnl - fee;
-      return {
-        ...prev,
-        availableMargin: prev.availableMargin + marginReleased + finalPnl - fee,
-        usedMargin: prev.usedMargin - marginReleased,
-        totalValue: newTotalValue,
-        totalPnl: prev.totalPnl + finalPnl,
-        totalPnlPct:
-          prev.totalValue > 0
-            ? ((prev.totalPnl + finalPnl) / prev.totalValue) * 100
-            : 0,
-      };
-    });
   };
 
-  const updatePositionsWithMarkPrice = useCallback(
-    (pair: string, markPrice: number) => {
-      setPositions((prev) => {
-        let hasChanges = false;
-        const updated = prev.map((pos) => {
-          if (pos.pair !== pair) return pos;
+  const updatePositionsWithMarkPrice = useCallback((pair: string, markPrice: number) => {
+    setPositions((prev) => {
+      let hasChanges = false;
+      const updated = prev.map((pos) => {
+        if (pos.pair !== pair) return pos;
 
-          const diff =
-            pos.side === "Long"
-              ? markPrice - pos.entryPrice
-              : pos.entryPrice - markPrice;
-          const pnl = diff * pos.size;
-          const margin = (pos.size * pos.entryPrice) / pos.leverage;
-          const roi = (pnl / margin) * 100;
+        const diff =
+          pos.side === "Long"
+            ? markPrice - pos.entryPrice
+            : pos.entryPrice - markPrice;
+        const pnl = diff * pos.size;
+        const margin = (pos.size * pos.entryPrice) / pos.leverage;
+        const roi = margin > 0 ? (pnl / margin) * 100 : 0;
 
-          // Only update if price actually changed
-          if (pos.markPrice === markPrice) return pos;
+        if (pos.markPrice === markPrice && pos.pnl === pnl && pos.roi === roi) {
+          return pos;
+        }
 
-          hasChanges = true;
-          return { ...pos, markPrice, pnl, roi };
-        });
-
-        if (!hasChanges) return prev; // Return same reference → no re-render
-
-        // Side-effect: update portfolio unrealized PnL
-        const totalUnrealized = updated.reduce((acc, p) => acc + p.pnl, 0);
-        setPortfolio((prevP) => ({
-          ...prevP,
-          unrealizedPnl: totalUnrealized,
-        }));
-
-        return updated;
+        hasChanges = true;
+        return { ...pos, markPrice, pnl, roi };
       });
-    },
-    [] // stable — uses only functional updaters
-  );
+
+      return hasChanges ? updated : prev;
+    });
+  }, []);
 
   return (
     <TradeContext.Provider
