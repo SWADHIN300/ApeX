@@ -28,4 +28,14 @@ pub enum ApexError {
     OrderNotOpen,
     #[msg("Payout cannot be represented as an unsigned amount")]
     InvalidPayout,
+    #[msg("Fee rate must be between 1 and 100 bps")]
+    InvalidFeeRate,
+    #[msg("Cannot add to an existing position on the opposite side")]
+    PositionSideMismatch,
+    #[msg("Order owner account does not match the order book entry")]
+    OrderOwnerMismatch,
+    #[msg("Trader margin account has insufficient locked collateral")]
+    InsufficientLockedCollateral,
+    #[msg("Protocol liquidity is insufficient; payout was deferred")]
+    PayoutDeferred,
 }

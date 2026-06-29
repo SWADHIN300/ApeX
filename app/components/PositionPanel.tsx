@@ -201,6 +201,18 @@ export default function PositionPanel({
             </tbody>
           </table>
         )}
+
+        {activeTab === "Open Orders" && (
+          <div className="flex items-center justify-center h-full min-h-[160px]">
+            <span className="t-body-sm text-text-muted">No open orders</span>
+          </div>
+        )}
+
+        {activeTab === "Trade Logs" && (
+          <div className="flex items-center justify-center h-full min-h-[160px]">
+            <span className="t-body-sm text-text-muted">No trade logs available</span>
+          </div>
+        )}
       </div>
     </section>
   );

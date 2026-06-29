@@ -19,6 +19,29 @@ import {
   TrendingUp,
   TrendingDown,
 } from "lucide-react";
+import { useWallet } from "@solana/wallet-adapter-react";
+
+function CustomWalletButton() {
+  const { connected } = useWallet();
+  return (
+    <WalletMultiButton
+      style={{
+        height: "32px",
+        fontSize: "10px",
+        background: "var(--gradient-primary)",
+        borderRadius: "4px",
+        fontFamily: "var(--font-sans)",
+        textTransform: "uppercase",
+        fontWeight: 700,
+        padding: "0 14px",
+        letterSpacing: "0.08em",
+        boxShadow: "0 2px 12px var(--primary-glow)",
+      }}
+    >
+      {connected ? undefined : "Connect Wallet"}
+    </WalletMultiButton>
+  );
+}
 
 export default function TopBar({
   isSideNavOpen = true,
@@ -348,10 +371,10 @@ export default function TopBar({
         {/* Right: actions */}
         <div className="flex h-14 items-center justify-end gap-1 px-3 bl-thin">
           <ThemeToggle />
-          <Link
-            href="/notifications"
+          <button
+            title="Notifications (Coming soon)"
             className="w-8 h-8 flex items-center justify-center text-text-dim
-              hover:text-text-muted no-underline transition-all duration-200"
+              hover:text-text-muted no-underline transition-all duration-200 cursor-not-allowed"
             style={{ borderRadius: "4px" }}
             onMouseEnter={(e) => {
               (e.currentTarget as HTMLElement).style.background = "rgba(124,111,255,0.1)";
@@ -364,7 +387,7 @@ export default function TopBar({
             aria-label="Notifications"
           >
             <Bell size={16} />
-          </Link>
+          </button>
           <Link
             href="/settings"
             className="w-8 h-8 flex items-center justify-center text-text-dim
@@ -407,20 +430,7 @@ export default function TopBar({
                 >
                   {network.replace("-beta", "")}
                 </button>
-                <WalletMultiButton
-                  style={{
-                    height: "32px",
-                    fontSize: "10px",
-                    background: "var(--gradient-primary)",
-                    borderRadius: "4px",
-                    fontFamily: "var(--font-sans)",
-                    textTransform: "uppercase",
-                    fontWeight: 700,
-                    padding: "0 14px",
-                    letterSpacing: "0.08em",
-                    boxShadow: "0 2px 12px var(--primary-glow)",
-                  }}
-                />
+                <CustomWalletButton />
               </>
             )}
           </div>

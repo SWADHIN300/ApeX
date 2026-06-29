@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { ExternalLink } from "lucide-react";
+import { useState } from "react";
+import { ExternalLink, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useMarket } from "@/contexts/MarketContext";
 import { useTrade } from "@/contexts/TradeContext";
 import { useNetwork } from "@/contexts/WalletProvider";
 import { placeProtocolOrder } from "@/lib/apexProtocol";
+import { MAX_LEVERAGE, TxStatus } from "@/lib/constants";
 
 type Side = "Long" | "Short";
 type OrderType = "Market" | "Limit" | "Stop";
@@ -15,7 +15,6 @@ type OrderType = "Market" | "Limit" | "Stop";
 const LEVERAGE_PRESETS = [1, 2, 5, 10];
 
 export default function OrderForm() {
-  const router = useRouter();
   const { connection } = useConnection();
   const { connected, publicKey, sendTransaction } = useWallet();
   const { network } = useNetwork();
@@ -26,9 +25,7 @@ export default function OrderForm() {
   const [orderType, setOrderType] = useState<OrderType>("Market");
   const [sizeInput, setSizeInput] = useState("");
   const [leverage, setLeverage] = useState(5);
-  const [isAuthLoading, setIsAuthLoading] = useState(true);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [txStatus, setTxStatus] = useState<TxStatus>("idle");
   const [orderError, setOrderError] = useState("");
   const [orderSignature, setOrderSignature] = useState("");
 
@@ -44,32 +41,7 @@ export default function OrderForm() {
       ? price * (1 - 1 / leverage + 0.005)
       : price * (1 + 1 / leverage - 0.005);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    fetch("/api/auth/me", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((data: { user?: unknown }) => {
-        if (!cancelled) setIsLoggedIn(Boolean(data.user));
-      })
-      .catch(() => {
-        if (!cancelled) setIsLoggedIn(false);
-      })
-      .finally(() => {
-        if (!cancelled) setIsAuthLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const handlePlaceOrder = async () => {
-    if (!isLoggedIn) {
-      router.push("/login");
-      return;
-    }
-
+  const initiateOrder = () => {
     if (!connected || !publicKey) {
       setOrderError("Connect your Solana wallet before placing an on-chain order.");
       return;
@@ -77,9 +49,16 @@ export default function OrderForm() {
 
     if (sizeUsdc <= 0 || !market) return;
 
-    setIsPlacingOrder(true);
+    setTxStatus("confirming");
     setOrderError("");
     setOrderSignature("");
+  };
+
+  const confirmOrder = async () => {
+    if (!connected || !publicKey || !market) return;
+    
+    setTxStatus("signing");
+    setOrderError("");
 
     try {
       const signature = await placeProtocolOrder({
@@ -93,24 +72,80 @@ export default function OrderForm() {
         leverage,
       });
 
+      setTxStatus("submitted");
       setOrderSignature(signature);
+      
+      
+      setTxStatus("confirmed");
       placeOrder(market.symbol, side, sizeUsdc, leverage, price);
-      setSizeInput(""); // Reset after placing order
+      setSizeInput("");
+      
+      setTimeout(() => {
+        setTxStatus((prev) => prev === "confirmed" ? "idle" : prev);
+      }, 5000);
     } catch (error) {
+      setTxStatus("failed");
       setOrderError(error instanceof Error ? error.message : "Could not place on-chain order.");
-    } finally {
-      setIsPlacingOrder(false);
     }
   };
 
+  const cancelOrder = () => {
+    setTxStatus("idle");
+  };
+
   const isOrderDisabled =
-    isAuthLoading ||
-    isPlacingOrder ||
-    (isLoggedIn && connected && (sizeUsdc <= 0 || marginReq > portfolio.availableMargin));
+    txStatus !== "idle" ||
+    !connected ||
+    !publicKey ||
+    sizeUsdc <= 0 ||
+    marginReq > portfolio.availableMargin;
   const explorerCluster = network === "devnet" ? "?cluster=devnet" : "";
 
   return (
-    <section className="col-span-12 lg:col-span-3 min-h-0 min-w-0 b-thin lg:border-l-0 flex flex-col bg-bg-surface p-4 overflow-y-auto no-scrollbar">
+    <section className="col-span-12 lg:col-span-3 min-h-0 min-w-0 b-thin lg:border-l-0 flex flex-col bg-bg-surface p-4 overflow-y-auto no-scrollbar relative">
+      {/* Confirmation Modal Overlay */}
+      {txStatus === "confirming" && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm rounded-md">
+          <div className="bg-bg-l1 w-full border border-t-border shadow-2xl rounded-md p-4">
+            <h3 className="t-headline-sm mb-4">Confirm Order</h3>
+            <div className="space-y-2 mb-6">
+              <div className="flex justify-between t-body-sm">
+                <span className="text-text-muted">Market</span>
+                <span className="text-text-main">{market?.symbol}</span>
+              </div>
+              <div className="flex justify-between t-body-sm">
+                <span className="text-text-muted">Side</span>
+                <span className={side === "Long" ? "text-long" : "text-short"}>{side} {leverage}x</span>
+              </div>
+              <div className="flex justify-between t-body-sm">
+                <span className="text-text-muted">Size</span>
+                <span className="text-text-main">{sizeUsdc.toFixed(2)} USDC</span>
+              </div>
+              <div className="flex justify-between t-body-sm">
+                <span className="text-text-muted">Est. Fee</span>
+                <span className="text-text-main">{fee.toFixed(2)} USDC</span>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={cancelOrder}
+                className="flex-1 py-2 rounded-md bg-bg-l2 text-text-main t-label-caps hover:bg-bg-l3"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmOrder}
+                className={`flex-1 py-2 rounded-md text-white t-label-caps ${
+                  side === "Long" ? "bg-long hover:bg-long/90" : "bg-short hover:bg-short/90"
+                }`}
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Long / Short toggle */}
       <div className="flex bg-bg-l1 p-1 gap-1 mb-6 rounded-md">
         <button
@@ -195,7 +230,7 @@ export default function OrderForm() {
         <input
           type="range"
           min="1"
-          max="20"
+          max={MAX_LEVERAGE}
           step="1"
           value={leverage}
           onChange={(e) => setLeverage(parseFloat(e.target.value))}
@@ -235,41 +270,51 @@ export default function OrderForm() {
         </div>
       </div>
 
-      {orderError && (
-        <div className="mb-3 b-thin border-short/40 bg-short/10 p-3 t-body-sm text-short">
-          {orderError}
+      {/* Tx Lifecycle Status */}
+      {txStatus !== "idle" && txStatus !== "confirming" && (
+        <div className={`mb-3 p-3 flex items-center gap-2 t-body-sm rounded-md border ${
+          txStatus === "failed" ? "bg-short/10 border-short/40 text-short" :
+          txStatus === "confirmed" ? "bg-long/10 border-long/40 text-long" :
+          "bg-primary/10 border-primary/40 text-primary"
+        }`}>
+          {txStatus === "signing" && <Loader2 size={16} className="animate-spin shrink-0" />}
+          {txStatus === "submitted" && <Loader2 size={16} className="animate-spin shrink-0" />}
+          {txStatus === "confirmed" && <CheckCircle2 size={16} className="shrink-0" />}
+          {txStatus === "failed" && <XCircle size={16} className="shrink-0" />}
+          
+          <span className="flex-1">
+            {txStatus === "signing" && "Awaiting Wallet Signature..."}
+            {txStatus === "submitted" && "Transaction Submitted..."}
+            {txStatus === "confirmed" && "Order Confirmed!"}
+            {txStatus === "failed" && (orderError || "Transaction Failed")}
+          </span>
         </div>
       )}
 
-      {orderSignature && (
+      {orderSignature && txStatus === "confirmed" && (
         <a
           href={`https://explorer.solana.com/tx/${orderSignature}${explorerCluster}`}
           target="_blank"
           rel="noreferrer"
           className="mb-3 flex items-center gap-2 t-body-sm text-long no-underline hover:underline"
         >
-          On-chain order confirmed <ExternalLink size={13} />
+          View on Explorer <ExternalLink size={13} />
         </a>
       )}
 
       {/* Action button */}
       <button
-        onClick={handlePlaceOrder}
+        onClick={initiateOrder}
         disabled={isOrderDisabled}
         className={`w-full py-4 text-white t-headline-md uppercase hover:opacity-90 active:scale-[0.98] transition-all shadow-lg rounded-md disabled:opacity-50 disabled:cursor-not-allowed ${
           side === "Long" ? "gradient-long glow-long" : "gradient-short glow-short"
         }`}
       >
-        {isAuthLoading
-          ? "Checking Login"
-          : isPlacingOrder
-            ? "Placing On-Chain"
-            : !isLoggedIn
-              ? "Log in to Place Order"
-              : connected
-            ? `Place ${side} Order`
-            : "Connect Wallet to Place Order"}
+        {connected ? `Place ${side} Order` : "Connect Wallet to Place Order"}
       </button>
     </section>
   );
 }
+
+
+

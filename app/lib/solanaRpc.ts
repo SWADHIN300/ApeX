@@ -1,5 +1,5 @@
 import { clusterApiUrl } from "@solana/web3.js";
-import type { LedgerNetwork } from "./ledgerClient";
+type LedgerNetwork = "devnet" | "mainnet-beta";
 
 export function getSolanaRpcEndpoint(network: LedgerNetwork) {
   if (network === "devnet") {
@@ -32,3 +32,4 @@ export function getServerSolanaRpcEndpoint(network: LedgerNetwork) {
     getSolanaRpcEndpoint(network)
   );
 }
+

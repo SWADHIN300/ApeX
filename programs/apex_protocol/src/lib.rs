@@ -39,6 +39,13 @@ pub mod apex_protocol {
         instructions::initialize_market::handler(ctx, fee_rate, oracle)
     }
 
+    pub fn deposit_margin(ctx: Context<DepositMargin>, amount: u64) -> Result<()> {
+        instructions::deposit_margin::handler(ctx, amount)
+    }
+
+    pub fn withdraw_margin(ctx: Context<WithdrawMargin>, amount: u64) -> Result<()> {
+        instructions::withdraw_margin::handler(ctx, amount)
+    }
     pub fn open_position(
         ctx: Context<OpenPosition>,
         side: Side,
@@ -96,34 +103,39 @@ pub fn get_oracle_price(oracle_account: &AccountInfo, clock: &Clock) -> Result<u
     );
 
     let price_abs = u64::try_from(price).map_err(|_| ApexError::MathOverflow)?;
-    let max_conf = price_abs
-        .checked_mul(MAX_CONFIDENCE_BPS)
-        .ok_or(ApexError::MathOverflow)?
-        .checked_div(FEE_DENOMINATOR)
-        .ok_or(ApexError::MathOverflow)?;
+    let max_conf = u64::try_from(
+        (price_abs as u128)
+            .checked_mul(MAX_CONFIDENCE_BPS as u128)
+            .ok_or(ApexError::MathOverflow)?
+            .checked_div(FEE_DENOMINATOR as u128)
+            .ok_or(ApexError::MathOverflow)?,
+    )
+    .map_err(|_| ApexError::MathOverflow)?;
     require!(confidence <= max_conf, ApexError::OraclePriceStale);
 
     normalize_pyth_price(price_abs, price_account.exponent)
 }
 
 fn normalize_pyth_price(raw_price: u64, exponent: i32) -> Result<u64> {
-    if exponent >= 0 {
-        let scale = 10_u64
+    let normalized = if exponent >= 0 {
+        let scale = 10_u128
             .checked_pow(exponent as u32)
             .ok_or(ApexError::MathOverflow)?;
-        raw_price
+        (raw_price as u128)
             .checked_mul(scale)
-            .and_then(|price| price.checked_mul(PRICE_DECIMALS))
-            .ok_or(ApexError::MathOverflow.into())
+            .and_then(|price| price.checked_mul(PRICE_DECIMALS as u128))
+            .ok_or(ApexError::MathOverflow)?
     } else {
-        let scale = 10_u64
+        let scale = 10_u128
             .checked_pow(exponent.unsigned_abs())
             .ok_or(ApexError::MathOverflow)?;
-        raw_price
-            .checked_mul(PRICE_DECIMALS)
+        (raw_price as u128)
+            .checked_mul(PRICE_DECIMALS as u128)
             .and_then(|price| price.checked_div(scale))
-            .ok_or(ApexError::MathOverflow.into())
-    }
+            .ok_or(ApexError::MathOverflow)?
+    };
+
+    u64::try_from(normalized).map_err(|_| ApexError::MathOverflow.into())
 }
 
 struct PythPriceAccount {
@@ -229,17 +241,19 @@ pub fn validate_leverage(leverage: u8) -> Result<()> {
 }
 
 pub fn calc_notional(collateral: u64, leverage: u8) -> Result<u64> {
-    collateral
-        .checked_mul(leverage as u64)
-        .ok_or(ApexError::MathOverflow.into())
+    let notional = (collateral as u128)
+        .checked_mul(leverage as u128)
+        .ok_or(ApexError::MathOverflow)?;
+    u64::try_from(notional).map_err(|_| ApexError::MathOverflow.into())
 }
 
 pub fn calc_size(notional: u64, entry_price: u64) -> Result<u64> {
-    notional
-        .checked_mul(PRICE_DECIMALS)
+    let size = (notional as u128)
+        .checked_mul(PRICE_DECIMALS as u128)
         .ok_or(ApexError::MathOverflow)?
-        .checked_div(entry_price)
-        .ok_or(ApexError::MathOverflow.into())
+        .checked_div(entry_price as u128)
+        .ok_or(ApexError::MathOverflow)?;
+    u64::try_from(size).map_err(|_| ApexError::MathOverflow.into())
 }
 
 pub fn calc_liquidation_price(entry_price: u64, leverage: u8, side: &Side) -> Result<u64> {
@@ -255,11 +269,14 @@ pub fn calc_liquidation_price(entry_price: u64, leverage: u8, side: &Side) -> Re
             .and_then(|v| v.checked_sub(MAINTENANCE_MARGIN)),
     }
     .ok_or(ApexError::MathOverflow)?;
-    entry_price
-        .checked_mul(numerator)
-        .ok_or(ApexError::MathOverflow)?
-        .checked_div(FEE_DENOMINATOR)
-        .ok_or(ApexError::MathOverflow.into())
+    u64::try_from(
+        (entry_price as u128)
+            .checked_mul(numerator as u128)
+            .ok_or(ApexError::MathOverflow)?
+            .checked_div(FEE_DENOMINATOR as u128)
+            .ok_or(ApexError::MathOverflow)?,
+    )
+    .map_err(|_| ApexError::MathOverflow.into())
 }
 
 pub fn calc_pnl(side: &Side, entry_price: u64, mark_price: u64, size: u64) -> Result<i64> {
@@ -273,6 +290,44 @@ pub fn calc_pnl(side: &Side, entry_price: u64, mark_price: u64, size: u64) -> Re
         .checked_div(PRICE_DECIMALS as i128)
         .ok_or(ApexError::MathOverflow)?;
     i64::try_from(pnl).map_err(|_| ApexError::MathOverflow.into())
+}
+
+pub fn weighted_average_price(
+    current_size: u64,
+    current_entry_price: u64,
+    added_size: u64,
+    added_entry_price: u64,
+) -> Result<u64> {
+    let total_size = (current_size as u128)
+        .checked_add(added_size as u128)
+        .ok_or(ApexError::MathOverflow)?;
+    require!(total_size > 0, ApexError::MathOverflow);
+
+    let weighted_value = (current_size as u128)
+        .checked_mul(current_entry_price as u128)
+        .and_then(|value| {
+            value.checked_add((added_size as u128).checked_mul(added_entry_price as u128)?)
+        })
+        .ok_or(ApexError::MathOverflow)?;
+
+    u64::try_from(
+        weighted_value
+            .checked_div(total_size)
+            .ok_or(ApexError::MathOverflow)?,
+    )
+    .map_err(|_| ApexError::MathOverflow.into())
+}
+
+pub fn calc_effective_leverage(collateral: u64, notional: u64) -> Result<u8> {
+    require!(collateral > 0, ApexError::InsufficientCollateral);
+    let leverage = (notional as u128)
+        .checked_add(collateral as u128 - 1)
+        .ok_or(ApexError::MathOverflow)?
+        .checked_div(collateral as u128)
+        .ok_or(ApexError::MathOverflow)?;
+    let leverage = u8::try_from(leverage).map_err(|_| ApexError::MathOverflow)?;
+    validate_leverage(leverage)?;
+    Ok(leverage)
 }
 
 pub fn market_signer_seeds<'a>(base_mint: &'a Pubkey, bump: &'a u8) -> [&'a [u8]; 3] {

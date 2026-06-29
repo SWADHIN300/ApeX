@@ -52,10 +52,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  const handleError = (error: Error) => {
+    if (error.name === "WalletNotReadyError") {
+      // Show an in-app error instead of navigating away
+      alert("Wallet not installed! Please install a Solana wallet (e.g., Phantom or Solflare) to connect.");
+    } else {
+      console.error(error);
+    }
+  };
+
   return (
     <NetworkContext.Provider value={{ network, setNetwork }}>
       <ConnectionProvider endpoint={endpoint}>
-        <SolanaWalletProvider wallets={wallets} autoConnect>
+        <SolanaWalletProvider wallets={wallets} autoConnect onError={handleError}>
           <WalletModalProvider>{children}</WalletModalProvider>
         </SolanaWalletProvider>
       </ConnectionProvider>

@@ -9,8 +9,14 @@ import {
   Transaction,
   TransactionInstruction,
 } from "@solana/web3.js";
-import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { getAssociatedTokenAddress, getMint, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import type { OrderBookLevel } from "./types";
+import {
+  DEFAULT_FEE_RATE_BPS,
+  ORDER_SIZE_BYTES,
+  PRICE_DECIMALS,
+  SIZE_DECIMALS,
+} from "./constants";
 
 type SendTransaction = (
   transaction: Transaction,
@@ -37,9 +43,12 @@ const PLACE_ORDER_DISCRIMINATOR = Buffer.from([
 const INITIALIZE_MARKET_DISCRIMINATOR = Buffer.from([
   35, 35, 189, 193, 155, 48, 170, 203,
 ]);
-const PRICE_DECIMALS = 1_000_000;
-const SIZE_DECIMALS = 1_000_000;
-const DEFAULT_FEE_RATE_BPS = 4;
+const DEPOSIT_MARGIN_DISCRIMINATOR = Buffer.from([
+  240, 96, 57, 37, 173, 174, 158, 219,
+]);
+const WITHDRAW_MARGIN_DISCRIMINATOR = Buffer.from([
+  124, 222, 8, 141, 181, 108, 15, 176,
+]);
 
 export function getApexProtocolProgramId() {
   return new PublicKey(
@@ -87,13 +96,32 @@ export function getMarketPdas(pair: string) {
   return { programId, baseMint, market, orderBook };
 }
 
+export function getTraderMarginPda(market: PublicKey, owner: PublicKey) {
+  const programId = getApexProtocolProgramId();
+  const [marginAccount] = PublicKey.findProgramAddressSync(
+    [Buffer.from("margin"), market.toBuffer(), owner.toBuffer()],
+    programId,
+  );
+
+  return marginAccount;
+}
+
+function readMarketVault(data: Buffer) {
+  const vaultOffset = 8 + 32 + 32;
+  return new PublicKey(data.subarray(vaultOffset, vaultOffset + 32));
+}
+
 function readProtocolOrder(data: Buffer, offset: number) {
   const side = data.readUInt8(offset + 32);
   const price = Number(data.readBigUInt64LE(offset + 33)) / PRICE_DECIMALS;
   const size = Number(data.readBigUInt64LE(offset + 41)) / SIZE_DECIMALS;
-  const status = data.readUInt8(offset + 50);
+  const lockedCollateral =
+    Number(data.readBigUInt64LE(offset + 49)) / SIZE_DECIMALS;
+  const leverage = data.readUInt8(offset + 57);
+  const status = data.readUInt8(offset + 58);
+  const createdAt = Number(data.readBigInt64LE(offset + 59));
 
-  return { side, price, size, status };
+  return { side, price, size, lockedCollateral, leverage, status, createdAt };
 }
 
 export function decodeProtocolOrderBook(data: Buffer) {
@@ -107,7 +135,7 @@ export function decodeProtocolOrderBook(data: Buffer) {
     if (order.status === 0) {
       asks.push({ price: order.price, size: order.size });
     }
-    offset += 51;
+    offset += ORDER_SIZE_BYTES;
   }
 
   const bidsLength = data.readUInt32LE(offset);
@@ -119,7 +147,7 @@ export function decodeProtocolOrderBook(data: Buffer) {
     if (order.status === 0) {
       bids.push({ price: order.price, size: order.size });
     }
-    offset += 51;
+    offset += ORDER_SIZE_BYTES;
   }
 
   return {
@@ -158,6 +186,59 @@ export function subscribeProtocolOrderBook(
   };
 }
 
+export type ProtocolMarginAccount = {
+  depositedCollateral: number;
+  lockedCollateral: number;
+  availableCollateral: number;
+};
+
+export function decodeProtocolMarginAccount(data: Buffer): ProtocolMarginAccount {
+  const depositedCollateral = Number(data.readBigUInt64LE(8 + 32 + 32)) / SIZE_DECIMALS;
+  const lockedCollateral = Number(data.readBigUInt64LE(8 + 32 + 32 + 8)) / SIZE_DECIMALS;
+
+  return {
+    depositedCollateral,
+    lockedCollateral,
+    availableCollateral: Math.max(0, depositedCollateral - lockedCollateral),
+  };
+}
+
+export async function fetchProtocolMarginAccount(
+  connection: Connection,
+  pair: string,
+  owner: PublicKey,
+): Promise<ProtocolMarginAccount> {
+  const { market } = getMarketPdas(pair);
+  const marginAccount = getTraderMarginPda(market, owner);
+  const account = await connection.getAccountInfo(marginAccount);
+
+  if (!account) {
+    return { depositedCollateral: 0, lockedCollateral: 0, availableCollateral: 0 };
+  }
+
+  return decodeProtocolMarginAccount(account.data);
+}
+
+export function subscribeProtocolMarginAccount(
+  connection: Connection,
+  pair: string,
+  owner: PublicKey,
+  callback: (data: ProtocolMarginAccount) => void,
+) {
+  const { market } = getMarketPdas(pair);
+  const marginAccount = getTraderMarginPda(market, owner);
+  const listenerId = connection.onAccountChange(
+    marginAccount,
+    (account: AccountInfo<Buffer>) => {
+      callback(decodeProtocolMarginAccount(account.data));
+    },
+    "confirmed",
+  );
+
+  return () => {
+    void connection.removeAccountChangeListener(listenerId);
+  };
+}
 function writeU64LE(buffer: Buffer, value: bigint, offset: number) {
   buffer.writeBigUInt64LE(value, offset);
 }
@@ -210,6 +291,9 @@ function createPlaceOrderInstruction({
   signer,
   market,
   orderBook,
+  marginAccount,
+  vault,
+  traderTokenAccount,
   side,
   price,
   sizeUsdc,
@@ -219,6 +303,9 @@ function createPlaceOrderInstruction({
   signer: PublicKey;
   market: PublicKey;
   orderBook: PublicKey;
+  marginAccount: PublicKey;
+  vault: PublicKey;
+  traderTokenAccount: PublicKey;
   side: "Long" | "Short";
   price: number;
   sizeUsdc: number;
@@ -235,15 +322,242 @@ function createPlaceOrderInstruction({
     programId,
     keys: [
       { pubkey: signer, isSigner: true, isWritable: true },
-      { pubkey: market, isSigner: false, isWritable: false },
+      { pubkey: market, isSigner: false, isWritable: true },
       { pubkey: orderBook, isSigner: false, isWritable: true },
-      { pubkey: signer, isSigner: false, isWritable: false },
+      { pubkey: marginAccount, isSigner: false, isWritable: true },
+      { pubkey: vault, isSigner: false, isWritable: true },
+      { pubkey: traderTokenAccount, isSigner: false, isWritable: true },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
     data,
   });
 }
 
+function createDepositMarginInstruction({
+  programId,
+  trader,
+  market,
+  marginAccount,
+  vault,
+  traderTokenAccount,
+  amount,
+}: {
+  programId: PublicKey;
+  trader: PublicKey;
+  market: PublicKey;
+  marginAccount: PublicKey;
+  vault: PublicKey;
+  traderTokenAccount: PublicKey;
+  amount: bigint;
+}) {
+  const data = Buffer.alloc(16);
+  DEPOSIT_MARGIN_DISCRIMINATOR.copy(data, 0);
+  writeU64LE(data, amount, 8);
+
+  return new TransactionInstruction({
+    programId,
+    keys: [
+      { pubkey: trader, isSigner: true, isWritable: true },
+      { pubkey: market, isSigner: false, isWritable: true },
+      { pubkey: marginAccount, isSigner: false, isWritable: true },
+      { pubkey: vault, isSigner: false, isWritable: true },
+      { pubkey: traderTokenAccount, isSigner: false, isWritable: true },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data,
+  });
+}
+
+function createWithdrawMarginInstruction({
+  programId,
+  trader,
+  market,
+  marginAccount,
+  vault,
+  traderTokenAccount,
+  amount,
+}: {
+  programId: PublicKey;
+  trader: PublicKey;
+  market: PublicKey;
+  marginAccount: PublicKey;
+  vault: PublicKey;
+  traderTokenAccount: PublicKey;
+  amount: bigint;
+}) {
+  const data = Buffer.alloc(16);
+  WITHDRAW_MARGIN_DISCRIMINATOR.copy(data, 0);
+  writeU64LE(data, amount, 8);
+
+  return new TransactionInstruction({
+    programId,
+    keys: [
+      { pubkey: trader, isSigner: true, isWritable: true },
+      { pubkey: market, isSigner: false, isWritable: true },
+      { pubkey: marginAccount, isSigner: false, isWritable: true },
+      { pubkey: vault, isSigner: false, isWritable: true },
+      { pubkey: traderTokenAccount, isSigner: false, isWritable: true },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    data,
+  });
+}
+
+async function getMarketVaultForTransaction({
+  connection,
+  publicKey,
+  pair,
+  transaction,
+  signers,
+}: {
+  connection: Connection;
+  publicKey: PublicKey;
+  pair: string;
+  transaction: Transaction;
+  signers: Keypair[];
+}) {
+  const { programId, baseMint, market, orderBook } = getMarketPdas(pair);
+  const marketAccount = await connection.getAccountInfo(market);
+  const orderBookAccount = await connection.getAccountInfo(orderBook);
+
+  if (!marketAccount || !orderBookAccount) {
+    const vaultKeypair = Keypair.generate();
+    signers.push(vaultKeypair);
+    transaction.add(
+      createInitializeMarketInstruction({
+        programId,
+        authority: publicKey,
+        market,
+        orderBook,
+        baseMint,
+        vault: vaultKeypair.publicKey,
+      }),
+    );
+    return { programId, baseMint, market, orderBook, vault: vaultKeypair.publicKey };
+  }
+
+  return { programId, baseMint, market, orderBook, vault: readMarketVault(marketAccount.data) };
+}
+
+async function toTokenAmount(connection: Connection, mint: PublicKey, amount: number) {
+  const mintInfo = await getMint(connection, mint);
+  const multiplier = 10 ** mintInfo.decimals;
+  const rawAmount = BigInt(Math.round(amount * multiplier));
+
+  if (rawAmount <= BigInt(0)) {
+    throw new Error("Enter an amount greater than 0.");
+  }
+
+  return rawAmount;
+}
+
+export async function depositProtocolMargin({
+  connection,
+  publicKey,
+  sendTransaction,
+  pair,
+  amount,
+}: {
+  connection: Connection;
+  publicKey: PublicKey;
+  sendTransaction: SendTransaction;
+  pair: string;
+  amount: number;
+}) {
+  const transaction = new Transaction();
+  const signers: Keypair[] = [];
+  const { programId, baseMint, market, vault } = await getMarketVaultForTransaction({
+    connection,
+    publicKey,
+    pair,
+    transaction,
+    signers,
+  });
+  const traderTokenAccount = await getAssociatedTokenAddress(baseMint, publicKey);
+  const sourceAccount = await connection.getAccountInfo(traderTokenAccount);
+
+  if (!sourceAccount) {
+    throw new Error("Your wallet does not have a collateral token account for this market.");
+  }
+
+  const marginAccount = getTraderMarginPda(market, publicKey);
+  const rawAmount = await toTokenAmount(connection, baseMint, amount);
+
+  transaction.add(
+    createDepositMarginInstruction({
+      programId,
+      trader: publicKey,
+      market,
+      marginAccount,
+      vault,
+      traderTokenAccount,
+      amount: rawAmount,
+    }),
+  );
+
+  const signature = await sendTransaction(transaction, connection, {
+    skipPreflight: false,
+    signers,
+  });
+
+  await connection.confirmTransaction(signature, "confirmed");
+  return signature;
+}
+
+export async function withdrawProtocolMargin({
+  connection,
+  publicKey,
+  sendTransaction,
+  pair,
+  amount,
+}: {
+  connection: Connection;
+  publicKey: PublicKey;
+  sendTransaction: SendTransaction;
+  pair: string;
+  amount: number;
+}) {
+  const transaction = new Transaction();
+  const signers: Keypair[] = [];
+  const { programId, baseMint, market, vault } = await getMarketVaultForTransaction({
+    connection,
+    publicKey,
+    pair,
+    transaction,
+    signers,
+  });
+  const traderTokenAccount = await getAssociatedTokenAddress(baseMint, publicKey);
+  const tokenAccount = await connection.getAccountInfo(traderTokenAccount);
+
+  if (!tokenAccount) {
+    throw new Error("Your wallet does not have a collateral token account for this market.");
+  }
+
+  const marginAccount = getTraderMarginPda(market, publicKey);
+  const rawAmount = await toTokenAmount(connection, baseMint, amount);
+
+  transaction.add(
+    createWithdrawMarginInstruction({
+      programId,
+      trader: publicKey,
+      market,
+      marginAccount,
+      vault,
+      traderTokenAccount,
+      amount: rawAmount,
+    }),
+  );
+
+  const signature = await sendTransaction(transaction, connection, {
+    skipPreflight: false,
+    signers,
+  });
+
+  await connection.confirmTransaction(signature, "confirmed");
+  return signature;
+}
 export async function placeProtocolOrder({
   connection,
   publicKey,
@@ -259,10 +573,12 @@ export async function placeProtocolOrder({
   const orderBookAccount = await connection.getAccountInfo(orderBook);
   const transaction = new Transaction();
   const signers: Keypair[] = [];
+  let vault: PublicKey;
 
   if (!marketAccount || !orderBookAccount) {
-    const vault = Keypair.generate();
-    signers.push(vault);
+    const vaultKeypair = Keypair.generate();
+    vault = vaultKeypair.publicKey;
+    signers.push(vaultKeypair);
     transaction.add(
       createInitializeMarketInstruction({
         programId,
@@ -270,21 +586,31 @@ export async function placeProtocolOrder({
         market,
         orderBook,
         baseMint,
-        vault: vault.publicKey,
+        vault,
       }),
     );
+  } else {
+    vault = readMarketVault(marketAccount.data);
   }
 
-  transaction.add(createPlaceOrderInstruction({
-    programId,
-    signer: publicKey,
-    market,
-    orderBook,
-    side,
-    price,
-    sizeUsdc,
-    leverage,
-  }));
+  const marginAccount = getTraderMarginPda(market, publicKey);
+  const traderTokenAccount = await getAssociatedTokenAddress(baseMint, publicKey);
+
+  transaction.add(
+    createPlaceOrderInstruction({
+      programId,
+      signer: publicKey,
+      market,
+      orderBook,
+      marginAccount,
+      vault,
+      traderTokenAccount,
+      side,
+      price,
+      sizeUsdc,
+      leverage,
+    }),
+  );
   const signature = await sendTransaction(transaction, connection, {
     skipPreflight: false,
     signers,
@@ -294,3 +620,6 @@ export async function placeProtocolOrder({
 
   return signature;
 }
+
+
+
