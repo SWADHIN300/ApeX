@@ -290,3 +290,55 @@ input:focus, textarea:focus, select:focus {
   color: var(--primary);
   filter: none !important;
 }
+
+/* ─── Connect Wallet shine animation ─── */
+@keyframes wallet-shine {
+  0%   { left: -100%; }
+  50%  { left: 100%; }
+  100% { left: 100%; }
+}
+@keyframes wallet-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(124,111,255,0.4), 0 0 20px rgba(124,111,255,0.15); }
+  50%      { box-shadow: 0 0 16px rgba(124,111,255,0.6), 0 0 40px rgba(124,111,255,0.25); }
+}
+.wallet-btn-shine {
+  position: relative;
+  overflow: hidden;
+  animation: wallet-pulse 2.5s ease-in-out infinite;
+  background: linear-gradient(135deg, #7c6fff 0%, #a78bfa 50%, #7c6fff 100%) !important;
+  border: 1px solid rgba(167, 139, 250, 0.4) !important;
+}
+.wallet-btn-shine::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -100%;
+  width: 60%;
+  height: 200%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255,255,255,0.15) 40%,
+    rgba(255,255,255,0.35) 50%,
+    rgba(255,255,255,0.15) 60%,
+    transparent 100%
+  );
+  transform: skewX(-20deg);
+  animation: wallet-shine 3s ease-in-out infinite;
+  pointer-events: none;
+}
+.wallet-btn-shine:hover {
+  animation: none;
+  box-shadow: 0 0 20px rgba(124,111,255,0.6), 0 0 40px rgba(124,111,255,0.3) !important;
+  filter: brightness(1.1);
+}
+
+/* ─── Coin icon helper ─── */
+.coin-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+  object-fit: cover;
+}

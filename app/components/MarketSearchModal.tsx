@@ -6,8 +6,9 @@ import { useRouter } from "next/navigation";
 import { fetchKlines } from "@/lib/api";
 import { createChart, ColorType, AreaSeries } from "lightweight-charts";
 import type { Time } from "lightweight-charts";
-import { X, Search, TrendingUp, TrendingDown, Star } from "lucide-react";
+import { X, Search, TrendingUp, TrendingDown, Star, Coins } from "lucide-react";
 import type { Ticker } from "@/lib/types";
+import CoinIcon from "./CoinIcon";
 
 // ── Mini sparkline chart ──────────────────────────────────────────────────────
 function MiniChart({ symbol, isUp }: { symbol: string; isUp: boolean }) {
@@ -105,10 +106,13 @@ function MarketRow({
         <Star size={13} fill={isFav ? "currentColor" : "none"} />
       </button>
 
-      {/* Symbol + base */}
-      <div className="w-32 shrink-0">
-        <div className="t-label-caps text-text-main">{base}</div>
-        <div className="text-[10px] text-text-dim mt-0.5">PERP · USDT</div>
+      {/* Coin icon + Symbol */}
+      <div className="flex items-center gap-2.5 w-40 shrink-0">
+        <CoinIcon symbol={m.symbol} size={22} />
+        <div>
+          <div className="t-label-caps text-text-main">{base}</div>
+          <div className="text-[10px] text-text-dim mt-0.5">PERP · USDT</div>
+        </div>
       </div>
 
       {/* Price */}
@@ -249,7 +253,7 @@ export default function MarketSearchModal({ onClose }: { onClose: () => void }) 
       >
         {/* Search Header */}
         <div className="flex items-center gap-3 px-4 py-3 bb-thin">
-          <Search size={18} className="text-text-muted shrink-0" />
+          <Coins size={18} className="text-primary shrink-0" />
           <input
             ref={inputRef}
             type="text"

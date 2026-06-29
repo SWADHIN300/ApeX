@@ -20,25 +20,27 @@ import {
   TrendingDown,
 } from "lucide-react";
 import { useWallet } from "@solana/wallet-adapter-react";
+import CoinIcon from "./CoinIcon";
 
 function CustomWalletButton() {
   const { connected } = useWallet();
   return (
     <WalletMultiButton
+      className={connected ? "" : "wallet-btn-shine"}
       style={{
         height: "32px",
         fontSize: "10px",
-        background: "var(--gradient-primary)",
+        background: connected ? "var(--primary)" : undefined,
         borderRadius: "4px",
         fontFamily: "var(--font-sans)",
         textTransform: "uppercase",
         fontWeight: 700,
         padding: "0 14px",
         letterSpacing: "0.08em",
-        boxShadow: "0 2px 12px var(--primary-glow)",
+        transition: "all 0.3s ease",
       }}
     >
-      {connected ? undefined : "Connect Wallet"}
+      {connected ? undefined : "🔗 Connect Wallet"}
     </WalletMultiButton>
   );
 }
@@ -289,7 +291,7 @@ export default function TopBar({
                       <div
                         key={m.symbol}
                         className="px-3 py-2 cursor-pointer t-data-sm text-text-main flex
-                          justify-between transition-colors"
+                          items-center gap-2 transition-colors"
                         style={{ transition: "background 0.15s" }}
                         onMouseEnter={(e) => {
                           (e.currentTarget as HTMLElement).style.background = "var(--bg-l3)";
@@ -303,7 +305,8 @@ export default function TopBar({
                           setIsSearchOpen(false);
                         }}
                       >
-                        <span className="font-medium">{m.symbol}</span>
+                        <CoinIcon symbol={m.symbol} size={18} />
+                        <span className="font-medium flex-1">{m.symbol}</span>
                         <span style={{ color: m.change24h >= 0 ? "var(--long)" : "var(--short)" }}>
                           {m.change24h > 0 ? "+" : ""}{m.change24h.toFixed(2)}%
                         </span>
