@@ -68,12 +68,26 @@ function getConfiguredMarketMints() {
   }
 }
 
-export function getMarketBaseMint(pair: string) {
+export function getMarketBaseMint(pair: string, network?: "devnet" | "mainnet-beta") {
   const mintMap = getConfiguredMarketMints();
   const mappedMint = mintMap[pair];
-  const fallbackMint = process.env.NEXT_PUBLIC_APEX_BASE_MINT;
 
   if (mappedMint) return new PublicKey(mappedMint);
+
+  // If on devnet, prefer the devnet-specific mint
+  const isDevnet =
+    network === "devnet" ||
+    (typeof window !== "undefined" &&
+      localStorage.getItem("apex-network") === "devnet");
+
+  if (isDevnet) {
+    const devnetMint =
+      process.env.NEXT_PUBLIC_APEX_DEVNET_BASE_MINT ||
+      process.env.NEXT_PUBLIC_APEX_DEVNET_USDC_MINT;
+    if (devnetMint) return new PublicKey(devnetMint);
+  }
+
+  const fallbackMint = process.env.NEXT_PUBLIC_APEX_BASE_MINT;
   if (fallbackMint) return new PublicKey(fallbackMint);
 
   throw new Error(
