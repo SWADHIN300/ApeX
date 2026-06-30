@@ -6,7 +6,7 @@ A cutting-edge decentralized exchange (DEX) platform built on Solana that enable
 
 ## 🚀 Overview
 
-ApeX is a sophisticated perpetual futures trading platform leveraging Solana's blockchain technology for fast, low-cost transactions. The platform combines smart contracts written in Rust with an intuitive Next.js frontend, providing traders with professional-grade tools for derivatives trading.
+ApeX is a sophisticated perpetual futures trading platform leveraging Solana's blockchain technology for fast, low-cost transactions. The platform combines smart contracts written in Rust with an intuitive, responsive frontend built on Next.js.
 
 ### Key Features
 
@@ -18,6 +18,10 @@ ApeX is a sophisticated perpetual futures trading platform leveraging Solana's b
 - **Dark Mode Support**: Modern UI with theme customization
 - **Database Backend**: PostgreSQL for order history and trade data
 - **Testnet Deployment**: Running on Solana Devnet for safe testing
+- **Real-Time Order Matching**: Fast order execution with minimal latency
+- **Advanced Risk Management**: Liquidation protection, margin requirements, and position limits
+- **Multiple Timeframes**: 1m, 5m, 15m, 1h, 4h, 1d, 1w candle support
+- **Responsive Design**: Mobile-friendly interface for trading on-the-go
 
 ## 📋 Project Structure
 
@@ -30,7 +34,8 @@ ApeX/
 │   ├── src/
 │   │   ├── components/         # React components
 │   │   ├── pages/             # Next.js pages (including /trade)
-│   │   └── hooks/             # Custom React hooks
+│   │   ├── hooks/             # Custom React hooks
+│   │   └── utils/             # Utility functions
 │   └── public/                 # Static assets
 ├── tests/                      # TypeScript test suite
 ├── Anchor.toml                 # Anchor framework configuration
@@ -87,6 +92,8 @@ ApeX/
 - **Price Feed Integration**: Real-time price updates via Pyth Network
 - **Settlement Logic**: Automatic order matching and settlement
 - **Risk Management**: Liquidation and margin requirements
+- **Funding Rates**: Automatic mechanism to keep perpetual prices aligned with spot markets
+- **Multi-Asset Support**: Trade various cryptocurrency pairs
 
 ## 🚀 Getting Started
 
@@ -142,32 +149,39 @@ npm run lint:fix       # Auto-fix formatting
 The Solana programs follow a modular design:
 - **Core Program (apex)**: Handles basic trading operations
 - **Protocol Program (apex_protocol)**: Manages complex protocol logic and state
+- **Order Matching Engine**: Efficient order matching and execution
+- **Settlement Module**: Handles order settlement and fund transfers
 
 ### Frontend Architecture
 - **Pages**: `/trade` route for the main trading interface
 - **Components**: Reusable React components for charts, orderbook, position management
 - **Hooks**: Custom hooks for wallet connection and on-chain state management
 - **Database**: PostgreSQL backend for caching orders and trade history
+- **Real-Time Updates**: WebSocket support for live price and order updates
 
 ## 💱 Trading Features
 
 ### Perpetual Futures
 - **No Expiration**: Hold positions indefinitely
-- **Leverage Trading**: Trade with multiple collateral
+- **Leverage Trading**: Trade with multiple collateral (up to 20x leverage)
 - **Funding Rates**: Automatic mechanism to keep perpetual prices aligned with spot markets
-- **Multi-Asset Support**: Trade various cryptocurrency pairs
+- **Multi-Asset Support**: Trade various cryptocurrency pairs (BTC, ETH, SOL, and more)
+- **Advanced Order Types**: Market orders, limit orders, and conditional orders
 
 ### Risk Management
 - **Liquidation Protection**: Automatic liquidation to prevent account bankruptcy
 - **Margin Requirements**: Initial and maintenance margin validation
 - **Position Limits**: Maximum position size constraints
 - **Collateral Verification**: Real-time collateral sufficiency checks
+- **Stop-Loss & Take-Profit**: Built-in risk management tools
 
 ### Charting & Analysis
 - **Professional Charts**: Powered by Lightweight Charts
 - **Multiple Timeframes**: 1m, 5m, 15m, 1h, 4h, 1d, 1w candles
-- **Technical Indicators**: Support for common trading indicators
+- **Technical Indicators**: Support for common trading indicators (MA, RSI, MACD, Bollinger Bands)
 - **Real-time Updates**: Live price feed integration via Pyth Network
+- **Order Book Visualization**: Real-time order book depth display
+- **Trade History**: Complete trade execution history and analytics
 
 ## 🔐 Security Considerations
 
@@ -175,6 +189,8 @@ The Solana programs follow a modular design:
 - **Anchor Framework**: Built-in protections against common vulnerabilities
 - **Pyth Network**: Tamper-proof price feeds reduce oracle manipulation risk
 - **Wallet Integration**: Transactions require wallet signature authentication
+- **Rate Limiting**: Protection against spam and abuse
+- **Audit Ready**: Code structure designed for future security audits
 
 ## 📊 Database
 
@@ -183,6 +199,7 @@ PostgreSQL is used for:
 - User trade statistics
 - Position snapshots
 - Price history caching
+- User preferences and settings
 
 Configuration through environment variables or `pg` client connection strings.
 
@@ -240,6 +257,8 @@ Tests include:
 - Integration tests for protocol logic
 - End-to-end trading scenarios
 - Liquidation simulations
+- Order matching validation
+- Price feed accuracy tests
 
 ## 📚 Documentation
 
@@ -247,6 +266,7 @@ Tests include:
 - **Solana Developer Docs**: https://docs.solana.com/
 - **Pyth Network**: https://pyth.network/
 - **Next.js Docs**: https://nextjs.org/docs/
+- **Lightweight Charts**: https://tradingview.github.io/lightweight-charts/
 
 ## 🤝 Contributing
 
@@ -254,6 +274,8 @@ Contributions are welcome! Please:
 1. Fork the repository
 2. Create a feature branch
 3. Submit a pull request with clear descriptions
+4. Follow the existing code style and conventions
+5. Include tests for new features
 
 ## 📄 License
 
@@ -266,20 +288,26 @@ Found a bug? Please open an issue on GitHub with:
 - Steps to reproduce
 - Expected vs actual behavior
 - Environment details
+- Screenshots or error logs (if applicable)
 
 ## 💬 Support & Community
 
 - **GitHub Issues**: Report bugs and request features
 - **GitHub Discussions**: General questions and community support
+- **Twitter**: [@ApeXDEX](https://twitter.com/)
 
 ## 🗺️ Roadmap
 
 - [ ] Mainnet deployment
-- [ ] Advanced order types (stop-loss, take-profit)
+- [ ] Advanced order types (stop-loss, take-profit, trailing stops)
 - [ ] Portfolio analytics dashboard
 - [ ] Mobile app
-- [ ] API for third-party integrations
+- [ ] REST API for third-party integrations
 - [ ] Governance token and DAO
+- [ ] Cross-chain support
+- [ ] Advanced charting tools and indicators
+- [ ] Social trading features
+- [ ] Price prediction tools
 
 ## ⚠️ Disclaimer
 
@@ -288,9 +316,30 @@ ApeX is a decentralized trading platform. Trading perpetual futures involves sig
 - Start with testnet and small positions
 - Never trade with funds they cannot afford to lose
 - Use appropriate risk management tools
+- Review all documentation and security guidelines
+
+## 📈 Recent Updates & Changes
+
+### Latest Features (v1.1.0)
+- ✅ Enhanced order matching engine for improved latency
+- ✅ Real-time WebSocket support for live data feeds
+- ✅ Improved liquidation mechanism with better price feeds
+- ✅ UI/UX improvements to the trading dashboard
+- ✅ Better error handling and user feedback
+- ✅ Performance optimizations for large position tracking
+- ✅ Support for additional SPL tokens and trading pairs
+- ✅ Improved database indexing for faster query performance
+
+### Bug Fixes (v1.1.0)
+- Fixed race condition in order settlement logic
+- Improved wallet connection error handling
+- Resolved chart rendering issues on mobile devices
+- Fixed decimal precision issues in calculations
 
 ---
 
 **Built with ❤️ on Solana**
 
 For the latest updates, visit: https://app-six-liard-53.vercel.app/trade
+
+Last Updated: June 30, 2026
