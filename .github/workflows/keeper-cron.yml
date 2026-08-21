@@ -1,0 +1,35 @@
+name: Apex Protocol Keeper Cron
+
+on:
+  schedule:
+    # Run every 5 minutes
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  run-keeper:
+    name: Execute Keeper Cycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Keeper Dependencies
+        working-directory: ./keeper
+        run: npm ci
+
+      - name: Run Keeper Iteration
+        working-directory: ./keeper
+        env:
+          SOLANA_RPC_URL: ${{ secrets.SOLANA_RPC_URL || 'https://api.devnet.solana.com' }}
+          KEEPER_PRIVATE_KEY: ${{ secrets.KEEPER_PRIVATE_KEY }}
+          APEX_PROTOCOL_PROGRAM_ID: ${{ secrets.APEX_PROTOCOL_PROGRAM_ID || 'E7hafM67eM1VWxo1LvKeYAzK3jk4TZKUbKMQqAadnd2s' }}
+          MARKET_BASE_MINTS: ${{ secrets.MARKET_BASE_MINTS }}
+        run: npm start -- --once
