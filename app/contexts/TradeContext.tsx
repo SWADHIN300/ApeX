@@ -12,6 +12,11 @@ import {
   fetchProtocolMarginAccount,
   subscribeProtocolMarginAccount,
 } from "@/lib/apexProtocol";
+import {
+  fetchOnChainPosition,
+  subscribeOnChainPosition,
+  mapOnChainToFrontendPosition,
+} from "@/lib/positionDecoder";
 import { Position, PortfolioData, TradeRecord } from "@/lib/types";
 
 const defaultPortfolio: PortfolioData = {
@@ -27,6 +32,7 @@ type TradeContextType = {
   positions: Position[];
   trades: TradeRecord[];
   portfolio: PortfolioData;
+  isOnChainPosition: boolean;
   placeOrder: (
     pair: string,
     side: "Long" | "Short",
@@ -37,6 +43,7 @@ type TradeContextType = {
   closePosition: (id: string, currentPrice: number) => void;
   updatePositionsWithMarkPrice: (pair: string, markPrice: number) => void;
   refreshLedgerBalance: () => Promise<void>;
+  refreshPositions: () => Promise<void>;
 };
 
 const TradeContext = createContext<TradeContextType | undefined>(undefined);
@@ -45,48 +52,92 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
   const { connection } = useConnection();
   const { publicKey } = useWallet();
   const { market } = useMarket();
-  const [positions, setPositions] = useState<Position[]>([]);
+  const [onChainPosition, setOnChainPosition] = useState<Position | null>(null);
+  const [localPositions, setLocalPositions] = useState<Position[]>([]);
   const [trades, setTrades] = useState<TradeRecord[]>([]);
   const [portfolio, setPortfolio] = useState<PortfolioData>(defaultPortfolio);
 
-  const applyMargin = useCallback((margin: {
-    depositedCollateral: number;
-    lockedCollateral: number;
-    availableCollateral: number;
-  }) => {
-    setPortfolio((prev) => {
-      const equity = margin.depositedCollateral + prev.unrealizedPnl;
+  // Combined positions: On-chain takes precedence for the active market pair
+  const positions = React.useMemo(() => {
+    if (onChainPosition) {
+      // If there's an on-chain position for this market, filter out local positions for that pair
+      const otherPairPositions = localPositions.filter(
+        (p) => p.pair !== onChainPosition.pair
+      );
+      return [onChainPosition, ...otherPairPositions];
+    }
+    return localPositions;
+  }, [onChainPosition, localPositions]);
 
-      return {
-        ...prev,
-        totalValue: equity,
-        availableMargin: margin.availableCollateral,
-        usedMargin: margin.lockedCollateral,
-        totalPnlPct: equity > 0 ? (prev.totalPnl / equity) * 100 : 0,
-      };
-    });
-  }, []);
+  const applyMargin = useCallback(
+    (margin: {
+      depositedCollateral: number;
+      lockedCollateral: number;
+      availableCollateral: number;
+    }) => {
+      setPortfolio((prev) => {
+        const equity = margin.depositedCollateral + prev.unrealizedPnl;
+
+        return {
+          ...prev,
+          totalValue: equity,
+          availableMargin: margin.availableCollateral,
+          usedMargin: margin.lockedCollateral,
+          totalPnlPct: equity > 0 ? (prev.totalPnl / equity) * 100 : 0,
+        };
+      });
+    },
+    []
+  );
 
   const refreshLedgerBalance = useCallback(async () => {
     if (!publicKey || !market) {
       setPortfolio(defaultPortfolio);
-      setPositions((prev) => (prev.length > 0 ? [] : prev));
-      setTrades((prev) => (prev.length > 0 ? [] : prev));
       return;
     }
 
-    const margin = await fetchProtocolMarginAccount(
-      connection,
-      market.symbol,
-      publicKey,
-    );
-    applyMargin(margin);
+    try {
+      const margin = await fetchProtocolMarginAccount(
+        connection,
+        market.symbol,
+        publicKey
+      );
+      applyMargin(margin);
+    } catch {
+      // ignore
+    }
   }, [applyMargin, connection, market, publicKey]);
+
+  const refreshPositions = useCallback(async () => {
+    if (!publicKey || !market) {
+      setOnChainPosition(null);
+      return;
+    }
+
+    try {
+      const decoded = await fetchOnChainPosition(
+        connection,
+        market.symbol,
+        publicKey
+      );
+      if (decoded) {
+        setOnChainPosition(
+          mapOnChainToFrontendPosition(decoded, market.symbol, market.price)
+        );
+      } else {
+        setOnChainPosition(null);
+      }
+    } catch {
+      setOnChainPosition(null);
+    }
+  }, [connection, market, publicKey]);
 
   useEffect(() => {
     void refreshLedgerBalance();
-  }, [refreshLedgerBalance]);
+    void refreshPositions();
+  }, [refreshLedgerBalance, refreshPositions]);
 
+  // Subscribe to margin account changes
   useEffect(() => {
     if (!publicKey || !market) return;
 
@@ -95,15 +146,40 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
         connection,
         market.symbol,
         publicKey,
-        applyMargin,
+        applyMargin
       );
     } catch {
       return;
     }
   }, [applyMargin, connection, market, publicKey]);
 
+  // Subscribe to Position PDA changes
+  useEffect(() => {
+    if (!publicKey || !market) return;
+
+    try {
+      return subscribeOnChainPosition(
+        connection,
+        market.symbol,
+        publicKey,
+        (decoded) => {
+          if (decoded) {
+            setOnChainPosition(
+              mapOnChainToFrontendPosition(decoded, market.symbol, market.price)
+            );
+          } else {
+            setOnChainPosition(null);
+          }
+        }
+      );
+    } catch {
+      return;
+    }
+  }, [connection, market, publicKey]);
+
   const placeOrder = () => {
     void refreshLedgerBalance();
+    void refreshPositions();
   };
 
   const closePosition = (id: string, currentPrice: number) => {
@@ -131,34 +207,54 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
     };
 
     setTrades((prev) => [newTrade, ...prev]);
-    setPositions((prev) => prev.filter((p) => p.id !== id));
+    setLocalPositions((prev) => prev.filter((p) => p.id !== id));
+    if (onChainPosition && onChainPosition.id === id) {
+      setOnChainPosition(null);
+    }
   };
 
-  const updatePositionsWithMarkPrice = useCallback((pair: string, markPrice: number) => {
-    setPositions((prev) => {
-      let hasChanges = false;
-      const updated = prev.map((pos) => {
-        if (pos.pair !== pair) return pos;
-
+  const updatePositionsWithMarkPrice = useCallback(
+    (pair: string, markPrice: number) => {
+      // Update on-chain position mark price & PnL
+      setOnChainPosition((prev) => {
+        if (!prev || prev.pair !== pair) return prev;
         const diff =
-          pos.side === "Long"
-            ? markPrice - pos.entryPrice
-            : pos.entryPrice - markPrice;
-        const pnl = diff * pos.size;
-        const margin = (pos.size * pos.entryPrice) / pos.leverage;
+          prev.side === "Long"
+            ? markPrice - prev.entryPrice
+            : prev.entryPrice - markPrice;
+        const pnl = diff * prev.size;
+        const margin = (prev.size * prev.entryPrice) / (prev.leverage || 1);
         const roi = margin > 0 ? (pnl / margin) * 100 : 0;
-
-        if (pos.markPrice === markPrice && pos.pnl === pnl && pos.roi === roi) {
-          return pos;
-        }
-
-        hasChanges = true;
-        return { ...pos, markPrice, pnl, roi };
+        return { ...prev, markPrice, pnl, roi };
       });
 
-      return hasChanges ? updated : prev;
-    });
-  }, []);
+      // Update local optimistic positions
+      setLocalPositions((prev) => {
+        let hasChanges = false;
+        const updated = prev.map((pos) => {
+          if (pos.pair !== pair) return pos;
+
+          const diff =
+            pos.side === "Long"
+              ? markPrice - pos.entryPrice
+              : pos.entryPrice - markPrice;
+          const pnl = diff * pos.size;
+          const margin = (pos.size * pos.entryPrice) / (pos.leverage || 1);
+          const roi = margin > 0 ? (pnl / margin) * 100 : 0;
+
+          if (pos.markPrice === markPrice && pos.pnl === pnl && pos.roi === roi) {
+            return pos;
+          }
+
+          hasChanges = true;
+          return { ...pos, markPrice, pnl, roi };
+        });
+
+        return hasChanges ? updated : prev;
+      });
+    },
+    []
+  );
 
   return (
     <TradeContext.Provider
@@ -166,10 +262,12 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
         positions,
         trades,
         portfolio,
+        isOnChainPosition: !!onChainPosition,
         placeOrder,
         closePosition,
         updatePositionsWithMarkPrice,
         refreshLedgerBalance,
+        refreshPositions,
       }}
     >
       {children}

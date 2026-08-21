@@ -112,6 +112,11 @@ export default function PositionPanel({
                       >
                         {pos.side} {pos.leverage}x
                       </span>
+                      {pos.id.startsWith("onchain-") && (
+                        <span className="text-[9px] px-1 py-0.2 rounded font-mono font-medium text-[#1d9e75] bg-[#1d9e75]/15 border border-[#1d9e75]/30">
+                          ON-CHAIN PDA
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="px-4 py-3 t-data-md text-text-main">

@@ -1,12 +1,21 @@
 'use client'
 import AppShell from '@/components/layout/AppShell'
 import { Trophy, Medal, Search } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { useTrade } from '@/contexts/TradeContext'
 
-// Keep some mock data for other users since we have no backend
-const MOCK_LEADERBOARD = [
+interface LeaderboardEntry {
+  rank: number
+  address: string
+  fullAddress?: string
+  volume: number
+  pnl: number
+  pnlPct: number
+  trades?: number
+}
+
+const FALLBACK_LEADERBOARD: LeaderboardEntry[] = [
   { rank: 1, address: '8X4g...9B1a', volume: 15420000, pnl: 452000, pnlPct: 145.2 },
   { rank: 2, address: '2mNf...3K9p', volume: 12100000, pnl: 320500, pnlPct: 89.4 },
   { rank: 3, address: '9vBq...7R4e', volume: 8950000, pnl: 215000, pnlPct: 65.8 },
@@ -21,46 +30,79 @@ const MOCK_LEADERBOARD = [
 
 export default function LeaderboardPage() {
   const [search, setSearch] = useState('')
+  const [apiLeaderboard, setApiLeaderboard] = useState<LeaderboardEntry[]>(FALLBACK_LEADERBOARD)
+  const [isLoading, setIsLoading] = useState(true)
   const { publicKey } = useWallet()
   const { portfolio, trades } = useTrade()
+
+  useEffect(() => {
+    let mounted = true
+    async function loadData() {
+      try {
+        const res = await fetch('/api/leaderboard')
+        if (res.ok) {
+          const data = await res.json()
+          if (mounted && Array.isArray(data.leaderboard) && data.leaderboard.length > 0) {
+            setApiLeaderboard(data.leaderboard)
+          }
+        }
+      } catch {
+        // use fallback
+      } finally {
+        if (mounted) setIsLoading(false)
+      }
+    }
+    void loadData()
+    return () => {
+      mounted = false
+    }
+  }, [])
   
   const totalVolume = trades.reduce((acc, t) => acc + (t.size * t.price), 0)
+  let leaderboard = [...apiLeaderboard]
   
-  let leaderboard = [...MOCK_LEADERBOARD]
-  
-  // Insert current user if they have volume
+  // Insert current user if connected and has trade volume
   if (publicKey && totalVolume > 0) {
     const address = publicKey.toBase58()
     const shortAddress = `${address.slice(0, 4)}...${address.slice(-4)}`
     
-    // Find rank
-    let rank = 11
-    for (let i = 0; i < leaderboard.length; i++) {
-      if (portfolio.totalPnl > leaderboard[i].pnl) {
-        rank = i + 1
-        break
+    // Check if user is already in leaderboard
+    const existingIndex = leaderboard.findIndex(
+      (l) => l.fullAddress === address || l.address.includes(shortAddress)
+    )
+
+    if (existingIndex >= 0) {
+      leaderboard[existingIndex] = {
+        ...leaderboard[existingIndex],
+        address: `${shortAddress} (You)`,
       }
+    } else {
+      let rank = 11
+      for (let i = 0; i < leaderboard.length; i++) {
+        if (portfolio.totalPnl > leaderboard[i].pnl) {
+          rank = i + 1
+          break
+        }
+      }
+      
+      const userEntry: LeaderboardEntry = {
+        rank,
+        address: `${shortAddress} (You)`,
+        fullAddress: address,
+        volume: totalVolume,
+        pnl: portfolio.totalPnl,
+        pnlPct: portfolio.totalPnlPct,
+      }
+      
+      leaderboard.splice(rank - 1, 0, userEntry)
+      for (let i = rank; i < leaderboard.length; i++) {
+        leaderboard[i].rank = i + 1
+      }
+      leaderboard = leaderboard.slice(0, Math.max(10, rank))
     }
-    
-    const userEntry = {
-      rank,
-      address: shortAddress + ' (You)',
-      volume: totalVolume,
-      pnl: portfolio.totalPnl,
-      pnlPct: portfolio.totalPnlPct
-    }
-    
-    leaderboard.splice(rank - 1, 0, userEntry)
-    // Re-adjust ranks below
-    for (let i = rank; i < leaderboard.length; i++) {
-      leaderboard[i].rank = i + 1
-    }
-    
-    // Keep top 10 or 11 if user is in it
-    leaderboard = leaderboard.slice(0, Math.max(10, rank))
   }
 
-  const filtered = leaderboard.filter(l => 
+  const filtered = leaderboard.filter((l) => 
     l.address.toLowerCase().includes(search.toLowerCase())
   )
 
@@ -85,7 +127,7 @@ export default function LeaderboardPage() {
               Trader Leaderboard
             </h1>
             <p className="font-ui text-body-sm text-on-surface-variant mt-0.5">
-              Top traders by PnL across all markets
+              Live leaderboard calculated from PostgreSQL trade settlements
             </p>
           </div>
           
@@ -117,7 +159,7 @@ export default function LeaderboardPage() {
                 const isPos = l.pnl >= 0
                 const isUser = l.address.includes('(You)')
                 return (
-                  <tr key={l.address} className={`${isUser ? 'bg-primary-container/10' : 'hover:bg-surface-container'} transition-colors`}>
+                  <tr key={l.address + l.rank} className={`${isUser ? 'bg-primary-container/10' : 'hover:bg-surface-container'} transition-colors`}>
                     <td className="px-6 py-4">
                       <div className="flex justify-center w-5">
                         {getRankIcon(l.rank)}

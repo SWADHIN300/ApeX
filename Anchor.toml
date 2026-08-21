@@ -5,7 +5,6 @@ seeds = true
 skip-lint = false
 
 [programs.devnet]
-apex = "4X73X5YSS6zk6FBbjHKp9L4DGMMJfqKbvjkD6Q8Vf22e"
 apex_protocol = "E7hafM67eM1VWxo1LvKeYAzK3jk4TZKUbKMQqAadnd2s"
 
 [registry]
