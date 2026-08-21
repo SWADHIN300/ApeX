@@ -1,6 +1,6 @@
 # ApeX - Decentralized Perpetual Futures DEX
 
-A high-performance perpetual futures decentralized exchange (DEX) built on Solana, featuring orderbook matching, on-chain Pyth oracle risk management, real-time charting, and autonomous keeper operations.
+A high-performance perpetual futures decentralized exchange (DEX) built on Solana, featuring on-chain order matching, Pyth Network oracle risk management, autonomous keeper operations, and real-time charting.
 
 **Live Demo:** [https://app-six-liard-53.vercel.app/trade](https://app-six-liard-53.vercel.app/trade)
 
@@ -11,10 +11,10 @@ A high-performance perpetual futures decentralized exchange (DEX) built on Solan
 > [!IMPORTANT]
 > ApeX is currently running on **Solana Devnet** for testing and technical validation. It has not undergone a formal third-party audit. Do not deposit mainnet assets.
 
-- **Oracle & Mark Price**: Settlement, collateral validation, and liquidations rely on on-chain Pyth Network price feeds (`get_oracle_price`). Interactive Candlestick charts display Binance Spot data as a high-frequency reference feed.
+- **Oracle & Mark Price**: Settlement, collateral validation, and liquidations rely on on-chain Pyth Network price feeds (`get_oracle_price`). Interactive Candlestick charts display high-frequency reference feed data (Binance, Coinbase, Kraken).
 - **Autonomous Keepers**: Order matching (`match_orders`), liquidation execution (`liquidate`), and 8-hour funding rate settlements (`update_funding_rate`) are processed by the autonomous Keeper cron service located in `/keeper`.
 - **On-Chain Positions**: Open positions are mapped directly to on-chain `Position` PDAs `[b"position", market, trader]`.
-- **Data Persistence**: Trade execution history and leaderboard rankings are cached and queried via a PostgreSQL pipeline.
+- **Data Persistence**: Trade execution history, order management, and leaderboard rankings are cached and queried via a PostgreSQL pipeline.
 
 ---
 
@@ -32,7 +32,7 @@ ApeX/
 │           └── lib.rs         # Entrypoint & Pyth price account parser
 ├── app/                       # Next.js 16 Web Application (App Router)
 │   ├── app/                   # App Router pages (/trade, /portfolio, /stats, /leaderboard)
-│   ├── components/            # React UI components (OrderForm, PositionPanel, Chart)
+│   ├── components/            # React UI components (OrderForm, PositionPanel, ChartPanel)
 │   ├── contexts/              # Trade, Market, Wallet, and Settings React contexts
 │   ├── hooks/                 # Custom React hooks (useOracle, usePositions, useOrderBook)
 │   ├── lib/                   # On-chain PDA decoders, RPC client, types, constants
@@ -102,8 +102,8 @@ cd app && npm install && cd ..
 
 ### 3. Running the Frontend
 ```bash
-cd app
 npm run dev
+# or: cd app && npm run dev
 ```
 Access the application at `http://localhost:3000`.
 
@@ -117,6 +117,7 @@ npm start
 ### 5. Running the Test Suite
 ```bash
 anchor test
+# or: npm run test
 ```
 
 ---
