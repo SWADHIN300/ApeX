@@ -53,4 +53,4 @@ export interface VolumeProfile {
   sellVolume: number;
 }
 
-export type ExchangeName = 'binance' | 'coinbase' | 'kraken';
+export type ExchangeName = 'apex' | 'binance' | 'coinbase' | 'kraken';

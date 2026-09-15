@@ -1,0 +1,23 @@
+{
+  "name": "apex-indexer",
+  "version": "1.0.0",
+  "description": "Indexes ApeX protocol fills from on-chain events into Postgres candles",
+  "main": "indexer.ts",
+  "scripts": {
+    "start": "ts-node indexer.ts",
+    "backfill": "ts-node indexer.ts --backfill-only",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.98.4",
+    "dotenv": "^16.4.5",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/pg": "^8.11.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}

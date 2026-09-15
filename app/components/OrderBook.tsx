@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useOrderBook } from "@/hooks/useOrderBook";
 import { useMarket } from "@/contexts/MarketContext";
 
@@ -10,7 +11,9 @@ const fmtTotal = (t: number) =>
   t >= 1000 ? `${(t / 1000).toFixed(2)}k` : t.toFixed(0);
 
 export default function OrderBook() {
-  const { bids, asks } = useOrderBook();
+  // Default to the protocol's own book; users can switch to the reference feed.
+  const [preferOnChain, setPreferOnChain] = useState(true);
+  const { bids, asks, source } = useOrderBook(preferOnChain);
   const { market } = useMarket();
 
   /* Compute cumulative totals + max for depth % */
@@ -50,10 +53,56 @@ export default function OrderBook() {
 
   return (
     <section className="col-span-12 lg:col-span-3 xl:col-span-2 min-h-[360px] lg:min-h-0 min-w-0 b-thin lg:border-l-0 lg:border-r-0 flex flex-col bg-bg-surface overflow-hidden">
-      {/* Header */}
-      <div className="h-10 bb-thin flex items-center px-3">
-        <span className="t-label-caps text-text-main">Order Book</span>
+      {/* Header — the data source is always stated explicitly, so reference
+          depth from a centralized exchange is never mistaken for ApeX liquidity. */}
+      <div className="h-10 bb-thin flex items-center justify-between gap-2 px-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="t-label-caps text-text-main whitespace-nowrap">Order Book</span>
+          <span
+            title={
+              source === "on-chain"
+                ? "Live depth from the protocol's on-chain OrderBook account"
+                : source === "reference"
+                  ? "Reference depth from a centralized exchange — not tradable on ApeX"
+                  : "Waiting for depth data"
+            }
+            className={`px-1.5 py-0.5 text-[9px] font-mono font-medium uppercase tracking-wider rounded border shrink-0 ${
+              source === "on-chain"
+                ? "bg-long/10 text-long border-long/30"
+                : source === "reference"
+                  ? "bg-bg-l3 text-text-muted border-t-border"
+                  : "bg-bg-l2 text-text-dim border-t-border"
+            }`}
+          >
+            {source === "on-chain"
+              ? "on-chain"
+              : source === "reference"
+                ? "reference"
+                : "loading"}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setPreferOnChain((v) => !v)}
+          title={
+            preferOnChain
+              ? "Currently preferring ApeX's on-chain book. Click to view the reference feed."
+              : "Currently forcing the reference feed. Click to prefer ApeX's on-chain book."
+          }
+          className="t-label-caps text-text-dim hover:text-text-main transition-colors whitespace-nowrap"
+        >
+          {preferOnChain ? "View ref" : "View chain"}
+        </button>
       </div>
+
+      {/* Empty-state notice when the protocol book has no resting orders. */}
+      {source === "reference" && preferOnChain && (
+        <div className="px-3 py-1.5 bb-thin bg-bg-l2/60">
+          <span className="text-[10px] font-mono text-text-muted leading-tight">
+            ApeX book is empty — showing reference depth for context.
+          </span>
+        </div>
+      )}
 
       <div className="flex-grow overflow-hidden flex flex-col" role="table" aria-label="Order Book">
         {/* Column header */}

@@ -64,3 +64,45 @@ CREATE TABLE IF NOT EXISTS leaderboard_cache (
 );
 
 CREATE INDEX IF NOT EXISTS leaderboard_pnl_idx ON leaderboard_cache (total_pnl DESC);
+
+-- ── ApeX-native market data ──────────────────────────────────────────────────
+-- Populated by the indexer service from the on-chain program's OrderFilled
+-- events. This is what lets the terminal chart ApeX's *own* market instead of a
+-- centralized reference feed.
+
+-- Every fill matched by the on-chain order book.
+CREATE TABLE IF NOT EXISTS fills (
+  -- `${signature}:${eventIndex}` so replaying a signature is idempotent.
+  id TEXT PRIMARY KEY,
+  signature TEXT NOT NULL,
+  market TEXT NOT NULL,
+  pair TEXT NOT NULL,
+  maker TEXT NOT NULL,
+  taker TEXT NOT NULL,
+  price NUMERIC NOT NULL,
+  size NUMERIC NOT NULL,
+  slot BIGINT NOT NULL DEFAULT 0,
+  timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS fills_pair_timestamp_idx ON fills (pair, timestamp DESC);
+CREATE INDEX IF NOT EXISTS fills_signature_idx ON fills (signature);
+
+-- OHLCV candles aggregated from `fills`, one row per (pair, timeframe, bucket).
+-- NOTE: the column is `timeframe`, not `interval` — INTERVAL is a reserved
+-- word in Postgres and would need quoting everywhere.
+CREATE TABLE IF NOT EXISTS candles (
+  pair TEXT NOT NULL,
+  timeframe TEXT NOT NULL,
+  bucket_start TIMESTAMPTZ NOT NULL,
+  open NUMERIC NOT NULL,
+  high NUMERIC NOT NULL,
+  low NUMERIC NOT NULL,
+  close NUMERIC NOT NULL,
+  volume NUMERIC NOT NULL DEFAULT 0,
+  trade_count INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (pair, timeframe, bucket_start)
+);
+
+CREATE INDEX IF NOT EXISTS candles_lookup_idx
+  ON candles (pair, timeframe, bucket_start DESC);

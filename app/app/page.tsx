@@ -11,7 +11,7 @@ import {
   Gavel,
   Zap,
   BookOpen,
-  Github,
+  GitBranch,
 } from "lucide-react";
 import { useMarket } from "@/contexts/MarketContext";
 import { useOracle } from "@/hooks/useOracle";
@@ -82,7 +82,7 @@ export default function LandingPage() {
               rel="noreferrer"
               className="t-body-sm text-text-dim hover:text-text-main transition-colors inline-flex items-center gap-1"
             >
-              <Github size={13} /> GitHub
+              <GitBranch size={13} /> GitHub
             </a>
           </nav>
           <Link

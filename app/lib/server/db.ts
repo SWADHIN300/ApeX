@@ -117,6 +117,42 @@ export async function ensureSchema() {
           rank INT NOT NULL,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+
+        -- ApeX-native market data, populated by the indexer service from the
+        -- on-chain program's OrderFilled events.
+        CREATE TABLE IF NOT EXISTS fills (
+          id TEXT PRIMARY KEY,
+          signature TEXT NOT NULL,
+          market TEXT NOT NULL,
+          pair TEXT NOT NULL,
+          maker TEXT NOT NULL,
+          taker TEXT NOT NULL,
+          price NUMERIC NOT NULL,
+          size NUMERIC NOT NULL,
+          slot BIGINT NOT NULL DEFAULT 0,
+          timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS fills_pair_timestamp_idx ON fills (pair, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS fills_signature_idx ON fills (signature);
+
+        -- Column is "timeframe" rather than "interval", since INTERVAL is a
+        -- reserved word in Postgres and would need quoting everywhere.
+        CREATE TABLE IF NOT EXISTS candles (
+          pair TEXT NOT NULL,
+          timeframe TEXT NOT NULL,
+          bucket_start TIMESTAMPTZ NOT NULL,
+          open NUMERIC NOT NULL,
+          high NUMERIC NOT NULL,
+          low NUMERIC NOT NULL,
+          close NUMERIC NOT NULL,
+          volume NUMERIC NOT NULL DEFAULT 0,
+          trade_count INT NOT NULL DEFAULT 0,
+          PRIMARY KEY (pair, timeframe, bucket_start)
+        );
+
+        CREATE INDEX IF NOT EXISTS candles_lookup_idx
+          ON candles (pair, timeframe, bucket_start DESC);
       `)
       .then(() => undefined);
   }

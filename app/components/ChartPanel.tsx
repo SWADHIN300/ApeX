@@ -120,6 +120,7 @@ export default function ChartPanel() {
   ];
 
   const exchanges = [
+    { id: "apex", label: "ApeX (on-chain)" },
     { id: "binance", label: "Binance" },
     { id: "coinbase", label: "Coinbase" },
     { id: "kraken", label: "Kraken" },

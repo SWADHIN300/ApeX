@@ -1,0 +1,24 @@
+{
+  "name": "apex-market-maker",
+  "version": "1.0.0",
+  "description": "Seeds ApeX protocol order book liquidity around the Pyth oracle price",
+  "main": "mm.ts",
+  "scripts": {
+    "start": "ts-node mm.ts",
+    "once": "ts-node mm.ts --once",
+    "dry-run": "ts-node mm.ts --dry-run",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.30.0",
+    "@solana/spl-token": "^0.4.14",
+    "@solana/web3.js": "^1.98.4",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}

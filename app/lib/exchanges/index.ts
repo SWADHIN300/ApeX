@@ -1,3 +1,4 @@
+import { ApexAdapter } from './apex';
 import { BinanceAdapter } from './binance';
 import { CoinbaseAdapter } from './coinbase';
 import { KrakenAdapter } from './kraken';
@@ -10,6 +11,7 @@ class ExchangeManager {
   private activeExchange: ExchangeName = 'binance';
 
   constructor() {
+    this.exchanges.set('apex', new ApexAdapter());
     this.exchanges.set('binance', new BinanceAdapter());
     this.exchanges.set('coinbase', new CoinbaseAdapter());
     this.exchanges.set('kraken', new KrakenAdapter());
@@ -103,6 +105,7 @@ class ExchangeManager {
 export const exchangeManager = new ExchangeManager();
 
 // Export adapters
+export { ApexAdapter } from './apex';
 export { BinanceAdapter } from './binance';
 export { CoinbaseAdapter } from './coinbase';
 export { KrakenAdapter } from './kraken';
