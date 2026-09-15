@@ -77,6 +77,33 @@ ApeX/
 - **ApeX Protocol Program ID**: `E7hafM67eM1VWxo1LvKeYAzK3jk4TZKUbKMQqAadnd2s`
 - **Cluster**: `devnet`
 - **Base Collateral Mint**: Devnet USDC (`4zMMC9srt5Ri5X14GVnYj7wAVTJGN1YjBe5HL4s3bQDa`)
+- **ProgramData Address**: `3S4rHmH7E379ZdSE2S2kmRMJ8syQFYNXCXmdhzeq1Ke3`
+- **Upgrade Authority**: `FtsfZqDQeei5o55pJTAx7ajkzMErL477pWMFgsFGntMq`
+- **Deployed Size**: 730,776 bytes
+
+### Building and deploying
+
+`cargo build-sbf` cannot run on Windows: installing Solana platform-tools
+requires the symlink privilege and fails with `os error 1314` unless Developer
+Mode is enabled. The build and deploy therefore run from WSL:
+
+```bash
+# from WSL, in the repo root
+bash scripts/deploy-devnet.sh status   # wallet, program state, rent and cost
+bash scripts/deploy-devnet.sh build    # compile the SBF artifact
+bash scripts/deploy-devnet.sh deploy   # verify, then deploy
+bash scripts/deploy-devnet.sh fund     # request devnet SOL (faucet permitting)
+```
+
+The script pins `HOME` (WSL inherits a Windows-style value through interop that
+breaks cargo and solana), rewrites `Cargo.lock` from v4 to v3 for the bundled
+Rust 1.75, builds in a Linux-side staging copy so a Windows rust-analyzer cannot
+re-resolve the lockfile mid-build, and confirms `declare_id!()` matches the
+deploy keypair before spending anything.
+
+A fresh deploy needs roughly **twice** the program's rent available, because the
+buffer and the program data account exist simultaneously; the buffer is closed
+and refunded afterwards.
 
 ---
 
