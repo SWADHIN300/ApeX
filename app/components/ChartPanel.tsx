@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import CandlestickChart from "./CandlestickChart";
 import EnhancedChart from "./EnhancedChart";
+import TradingViewChart from "./TradingViewChart";
 import AdvancedIndicators, { AdvancedIndicatorConfig } from "./AdvancedIndicators";
 import AdvancedAnalyticsPanel from "./AdvancedAnalyticsPanel";
 import { useMarket } from "@/contexts/MarketContext";
@@ -24,6 +25,16 @@ import {
 } from "lucide-react";
 
 const timeframes = ["1m", "5m", "15m", "1h", "4h", "1d"];
+
+/** ApeX timeframe -> TradingView Advanced Charts resolution. */
+const TIMEFRAME_TO_RESOLUTION: Record<string, string> = {
+  "1m": "1",
+  "5m": "5",
+  "15m": "15",
+  "1h": "60",
+  "4h": "240",
+  "1d": "1D",
+};
 
 export type Indicators = {
   sma20: boolean;
@@ -73,6 +84,10 @@ export default function ChartPanel() {
   const [activeExchange, setActiveExchange] = useState(exchangeManager.getActiveExchange());
   const [useEnhancedChart, setUseEnhancedChart] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
+  // Advanced Charts is used when the licensed library is installed under
+  // public/charting_library/. It reports back if it isn't, and we fall through
+  // to the bundled lightweight-charts view.
+  const [tradingViewAvailable, setTradingViewAvailable] = useState(true);
   const indicatorRef = useRef<HTMLDivElement>(null);
   const advancedIndicatorRef = useRef<HTMLDivElement>(null);
   const drawingRef = useRef<HTMLDivElement>(null);
@@ -485,21 +500,34 @@ export default function ChartPanel() {
 
       {/* Chart area */}
       <div className="flex-grow relative bg-bg-base overflow-hidden" style={{ minHeight: 300 }}>
-        {useEnhancedChart && (chartType !== 'candlestick' || Object.values(advancedIndicators).some(v => v === true && typeof v === 'boolean')) ? (
-          <EnhancedChart
-            timeframe={active}
-            indicatorConfig={advancedIndicators}
-            drawingTool={drawingTool}
-            chartType={chartType}
-            exchange={activeExchange}
-          />
-        ) : (
-          <CandlestickChart
-            timeframe={active}
-            indicators={indicators}
-            drawingTool={drawingTool}
+        {/* Advanced Charts renders ApeX's own candles via /api/udf when the
+            licensed library is present; otherwise it stays out of the way. */}
+        {tradingViewAvailable && activeExchange === "apex" && market?.symbol && (
+          <TradingViewChart
+            symbol={market.symbol}
+            resolution={TIMEFRAME_TO_RESOLUTION[active] ?? "15"}
+            onUnavailable={() => setTradingViewAvailable(false)}
           />
         )}
+
+        {!(tradingViewAvailable && activeExchange === "apex") &&
+          (useEnhancedChart &&
+          (chartType !== 'candlestick' || Object.values(advancedIndicators).some(v => v === true && typeof v === 'boolean')) ? (
+            <EnhancedChart
+              timeframe={active}
+              indicatorConfig={advancedIndicators}
+              drawingTool={drawingTool}
+              chartType={chartType}
+              exchange={activeExchange}
+            />
+          ) : (
+            <CandlestickChart
+              timeframe={active}
+              indicators={indicators}
+              drawingTool={drawingTool}
+              exchange={activeExchange}
+            />
+          ))}
       </div>
 
       {/* Advanced Analytics Panel */}

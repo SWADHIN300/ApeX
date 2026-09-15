@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowUpDown,
+  CandlestickChart,
   ChevronLeft,
   ChevronRight,
   CircleHelp,
@@ -25,6 +26,7 @@ interface NavItem {
 
 const mainItems: NavItem[] = [
   { icon: ArrowUpDown, label: "Trade",    href: "/trade"   },
+  { icon: CandlestickChart, label: "Spot", href: "/spot"   },
   { icon: Repeat2,    label: "Swap",     href: "/swap"    },
   { icon: TrendingUp, label: "Markets",  href: "/markets" },
   { icon: History,    label: "History",  href: "/history" },

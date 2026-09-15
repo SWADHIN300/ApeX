@@ -11,6 +11,7 @@ import {
 } from "lightweight-charts";
 import { fetchKlines, subscribeKlines } from "@/lib/api";
 import { useMarket } from "@/contexts/MarketContext";
+import type { ExchangeName } from "@/lib/exchanges";
 import type { IChartApi, ISeriesApi, Time } from "lightweight-charts";
 import type { Indicators, DrawingTool } from "./ChartPanel";
 
@@ -18,12 +19,15 @@ interface Props {
   timeframe?: string;
   indicators?: Indicators;
   drawingTool?: DrawingTool;
+  /** Market data source. `apex` renders the protocol's own indexed fills. */
+  exchange?: ExchangeName;
 }
 
 export default function CandlestickChart({
   timeframe = "15m",
   indicators = { sma20: true, sma50: true, volume: true },
   drawingTool = "crosshair",
+  exchange = "binance",
 }: Props) {
   const { market } = useMarket();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -33,6 +37,7 @@ export default function CandlestickChart({
   const sma20SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const sma50SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isEmpty, setIsEmpty] = useState(false);
   // Store loaded close data for SMA recalculation on toggle
   const closedataRef = useRef<{ time: Time; value: number }[]>([]);
 
@@ -185,7 +190,7 @@ export default function CandlestickChart({
     const loadData = async () => {
       setIsLoading(true);
 
-      const klines = await fetchKlines(market.symbol, timeframe, 200);
+      const klines = await fetchKlines(market.symbol, timeframe, 200, exchange);
       if (!mounted || !seriesRef.current) return;
 
       const unique = Array.from(
@@ -193,6 +198,10 @@ export default function CandlestickChart({
       )
         .sort((a, b) => a.time - b.time)
         .map((k) => ({ ...k, time: k.time as Time }));
+
+      // An empty ApeX series is expected until the protocol has fills the
+      // indexer can aggregate — surface that instead of a blank chart.
+      setIsEmpty(unique.length === 0);
 
       if (unique.length > 0) {
         seriesRef.current.setData(unique);
@@ -222,21 +231,27 @@ export default function CandlestickChart({
 
       setIsLoading(false);
 
-      // Real-time WebSocket updates
-      unsubscribeWs = subscribeKlines(market.symbol, timeframe, (candle) => {
-        if (!mounted || !seriesRef.current) return;
-        seriesRef.current.update({ ...candle, time: candle.time as Time });
-        if (indicators.volume) {
-          volumeSeriesRef.current?.update({
-            time: candle.time as Time,
-            value: candle.volume,
-            color:
-              candle.close >= candle.open
-                ? "rgba(29, 158, 117, 0.5)"
-                : "rgba(216, 90, 48, 0.5)",
-          });
-        }
-      });
+      // Real-time updates from the selected source.
+      unsubscribeWs = subscribeKlines(
+        market.symbol,
+        timeframe,
+        (candle) => {
+          if (!mounted || !seriesRef.current) return;
+          setIsEmpty(false);
+          seriesRef.current.update({ ...candle, time: candle.time as Time });
+          if (indicators.volume) {
+            volumeSeriesRef.current?.update({
+              time: candle.time as Time,
+              value: candle.volume,
+              color:
+                candle.close >= candle.open
+                  ? "rgba(29, 158, 117, 0.5)"
+                  : "rgba(216, 90, 48, 0.5)",
+            });
+          }
+        },
+        exchange,
+      );
     };
 
     loadData();
@@ -245,7 +260,7 @@ export default function CandlestickChart({
       mounted = false;
       unsubscribeWs?.();
     };
-  }, [market?.symbol, timeframe]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [market?.symbol, timeframe, exchange]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div ref={containerRef} style={{ width: "100%", height: "100%", position: "relative" }}>
@@ -262,6 +277,34 @@ export default function CandlestickChart({
           }}
         >
           <span className="t-label-caps text-text-muted">Loading Chart…</span>
+        </div>
+      )}
+      {!isLoading && isEmpty && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 10,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+            background: "rgba(13,13,15,0.6)",
+            textAlign: "center",
+            padding: "0 16px",
+          }}
+        >
+          <span className="t-label-caps text-text-muted">
+            {exchange === "apex" ? "No ApeX trades indexed yet" : "No chart data"}
+          </span>
+          {exchange === "apex" && (
+            <span className="text-[10px] font-mono text-text-dim leading-snug max-w-[280px]">
+              ApeX candles are built from on-chain fills. Once the order book has
+              liquidity and trades settle, they appear here. Switch source to a
+              reference exchange for market context.
+            </span>
+          )}
         </div>
       )}
     </div>

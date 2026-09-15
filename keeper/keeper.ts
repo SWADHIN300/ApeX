@@ -47,6 +47,11 @@ const MARKET_ACCOUNT_SIZE = 8 + 193;
 const POSITION_ACCOUNT_SIZE = 8 + 131;
 const ORDER_SIZE = 67;
 
+// ── Spot account layout (state/spot.rs) ─────────────────────────────────────
+const SPOT_MARKET_ACCOUNT_SIZE = 8 + 177;
+const SPOT_MARKET_BASE_MINT_OFFSET = 40;
+const SPOT_MARKET_QUOTE_MINT_OFFSET = 72;
+
 // ── Market field offsets ────────────────────────────────────────────────────
 const MARKET_AUTHORITY_OFFSET = 8;
 const MARKET_ORACLE_OFFSET = 40;
@@ -94,6 +99,8 @@ interface KeeperConfig {
   programId: PublicKey;
   keeperKeypair: Keypair | null;
   baseMints: PublicKey[];
+  /** Spot pairs to crank, as [baseMint, quoteMint] tuples. */
+  spotPairs: { baseMint: PublicKey; quoteMint: PublicKey }[];
   pollIntervalMs: number;
   runOnce: boolean;
   dryRun: boolean;
@@ -178,11 +185,30 @@ function loadConfig(): KeeperConfig {
   const pollIntervalMs =
     Number.isFinite(parsedInterval) && parsedInterval > 0 ? parsedInterval : 15_000;
 
+  // SPOT_PAIRS is a JSON array of { baseMint, quoteMint }. Optional — the
+  // keeper simply skips spot cranking when it isn't configured.
+  const spotPairs: { baseMint: PublicKey; quoteMint: PublicKey }[] = [];
+  const rawSpotPairs = process.env.SPOT_PAIRS;
+  if (rawSpotPairs) {
+    try {
+      const parsed = JSON.parse(rawSpotPairs) as { baseMint: string; quoteMint: string }[];
+      for (const pair of parsed) {
+        spotPairs.push({
+          baseMint: new PublicKey(pair.baseMint),
+          quoteMint: new PublicKey(pair.quoteMint),
+        });
+      }
+    } catch (err) {
+      console.warn(`⚠️  SPOT_PAIRS could not be parsed: ${(err as Error).message}`);
+    }
+  }
+
   return {
     rpcUrl,
     programId,
     keeperKeypair,
     baseMints,
+    spotPairs,
     pollIntervalMs,
     runOnce: process.argv.includes("--once"),
     dryRun: process.argv.includes("--dry-run") || process.env.DRY_RUN === "true",
@@ -352,6 +378,7 @@ class ApexKeeper {
     console.log(`Program ID:   ${this.config.programId.toBase58()}`);
     console.log(`Keeper:       ${keeperAddress}`);
     console.log(`Markets:      ${this.config.baseMints.length}`);
+    console.log(`Spot pairs:   ${this.config.spotPairs.length}`);
     console.log(`Mode:         ${this.config.runOnce ? "single run" : "continuous"}`);
     console.log(`Execution:    ${this.canSend ? "LIVE" : "observe only"}`);
     console.log("==================================================");
@@ -380,6 +407,95 @@ class ApexKeeper {
         console.error(`  ❌ Market ${baseMint.toBase58()} failed:`, (err as Error).message);
       }
     }
+
+    for (const pair of this.config.spotPairs) {
+      try {
+        await this.processSpotMarket(pair.baseMint, pair.quoteMint);
+      } catch (err) {
+        console.error(
+          `  ❌ Spot ${pair.baseMint.toBase58().slice(0, 4)}…/${pair.quoteMint
+            .toBase58()
+            .slice(0, 4)}… failed:`,
+          (err as Error).message,
+        );
+      }
+    }
+  }
+
+  // ── Spot order matching ───────────────────────────────────────────────────
+  private async processSpotMarket(baseMint: PublicKey, quoteMint: PublicKey) {
+    const [spotMarketPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("spot_market"), baseMint.toBuffer(), quoteMint.toBuffer()],
+      this.config.programId,
+    );
+    const [orderBookPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("spot_orderbook"), spotMarketPda.toBuffer()],
+      this.config.programId,
+    );
+
+    const marketInfo = await this.connection.getAccountInfo(spotMarketPda);
+    if (!marketInfo) {
+      console.log(`  ⚪ Spot market ${spotMarketPda.toBase58()} not initialized.`);
+      return;
+    }
+    if (marketInfo.data.length !== SPOT_MARKET_ACCOUNT_SIZE) {
+      throw new Error(
+        `Unexpected SpotMarket size ${marketInfo.data.length}, expected ${SPOT_MARKET_ACCOUNT_SIZE}.`,
+      );
+    }
+
+    console.log(`  🔁 Spot market ${spotMarketPda.toBase58()}`);
+
+    const orderBookInfo = await this.connection.getAccountInfo(orderBookPda);
+    if (!orderBookInfo) return;
+
+    const { bids, asks } = decodeOrderBook(orderBookInfo.data);
+    const bestBid = bids.find((o) => o.status === 0);
+    const bestAsk = asks.find((o) => o.status === 0);
+
+    if (!bestBid || !bestAsk) {
+      console.log(`     Book: ${bids.length} bids / ${asks.length} asks — nothing to cross.`);
+      return;
+    }
+    if (bestAsk.price > bestBid.price) {
+      console.log("     Book: spread not crossed.");
+      return;
+    }
+    if (bestBid.owner.equals(bestAsk.owner)) {
+      console.log("     ⚠️  Top of book is a self-trade; program would reject. Skipping.");
+      return;
+    }
+
+    console.log(
+      `     🔄 Crossing spot bid ${bestBid.price} vs ask ${bestAsk.price} — match_spot_orders`,
+    );
+
+    const keeper = this.requireKeeper();
+    const deriveSpotBalance = (owner: PublicKey) => {
+      const [pda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("spot_balance"), spotMarketPda.toBuffer(), owner.toBuffer()],
+        this.config.programId,
+      );
+      return pda;
+    };
+
+    const instruction = new TransactionInstruction({
+      programId: this.config.programId,
+      keys: [
+        { pubkey: keeper.publicKey, isSigner: true, isWritable: true },
+        { pubkey: spotMarketPda, isSigner: false, isWritable: true },
+        { pubkey: orderBookPda, isSigner: false, isWritable: true },
+        { pubkey: bestBid.owner, isSigner: false, isWritable: false },
+        { pubkey: bestAsk.owner, isSigner: false, isWritable: false },
+        { pubkey: deriveSpotBalance(bestBid.owner), isSigner: false, isWritable: true },
+        { pubkey: deriveSpotBalance(bestAsk.owner), isSigner: false, isWritable: true },
+        // Duplicated market account satisfies the order book's has_one = market.
+        { pubkey: spotMarketPda, isSigner: false, isWritable: false },
+      ],
+      data: discriminator("match_spot_orders"),
+    });
+
+    await this.send([instruction], "match_spot_orders");
   }
 
   private async processMarket(baseMint: PublicKey) {
