@@ -49,6 +49,9 @@ const DEPOSIT_MARGIN_DISCRIMINATOR = Buffer.from([
 const WITHDRAW_MARGIN_DISCRIMINATOR = Buffer.from([
   124, 222, 8, 141, 181, 108, 15, 176,
 ]);
+const CLAIM_PENDING_PAYOUT_DISCRIMINATOR = Buffer.from([
+  193, 0, 88, 10, 7, 129, 141, 108,
+]);
 
 export function getApexProtocolProgramId() {
   return new PublicKey(
@@ -597,6 +600,91 @@ export async function withdrawProtocolMargin({
   await connection.confirmTransaction(signature, "confirmed");
   return signature;
 }
+export function getPendingPayoutPda(market: PublicKey, owner: PublicKey) {
+  const programId = getApexProtocolProgramId();
+  const [pendingPayout] = PublicKey.findProgramAddressSync(
+    [Buffer.from("pending_payout"), market.toBuffer(), owner.toBuffer()],
+    programId,
+  );
+
+  return pendingPayout;
+}
+
+/**
+ * Reads the balance a trader is still owed from a close that the protocol had
+ * to defer because its liquidity pool and insurance fund were momentarily
+ * short. Returns 0 when no pending payout account exists.
+ */
+export async function fetchPendingPayout(
+  connection: Connection,
+  pair: string,
+  owner: PublicKey,
+): Promise<number> {
+  const { market } = getMarketPdas(pair);
+  const account = await connection.getAccountInfo(getPendingPayoutPda(market, owner));
+  if (!account) return 0;
+
+  // Layout: discriminator(8) + owner(32) + market(32) + amount(8)
+  return Number(readU64LE(account.data, 8 + 32 + 32)) / SIZE_DECIMALS;
+}
+
+/**
+ * Claims a previously deferred payout. Draws from the liquidity pool first and
+ * then the insurance fund, paying out as much as the protocol can currently
+ * back and leaving any remainder claimable later.
+ */
+export async function claimPendingPayout({
+  connection,
+  publicKey,
+  sendTransaction,
+  pair,
+}: {
+  connection: Connection;
+  publicKey: PublicKey;
+  sendTransaction: SendTransaction;
+  pair: string;
+}) {
+  const { programId, baseMint, market } = getMarketPdas(pair);
+  const marketAccount = await connection.getAccountInfo(market);
+
+  if (!marketAccount) {
+    throw new Error("This market has not been initialized yet.");
+  }
+
+  const vault = readMarketVault(marketAccount.data);
+  const traderTokenAccount = await getAssociatedTokenAddress(baseMint, publicKey);
+
+  if (!(await connection.getAccountInfo(traderTokenAccount))) {
+    throw new Error("Your wallet does not have a collateral token account for this market.");
+  }
+
+  const transaction = new Transaction().add(
+    new TransactionInstruction({
+      programId,
+      keys: [
+        { pubkey: publicKey, isSigner: true, isWritable: true },
+        { pubkey: market, isSigner: false, isWritable: true },
+        {
+          pubkey: getPendingPayoutPda(market, publicKey),
+          isSigner: false,
+          isWritable: true,
+        },
+        { pubkey: vault, isSigner: false, isWritable: true },
+        { pubkey: traderTokenAccount, isSigner: false, isWritable: true },
+        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      ],
+      data: CLAIM_PENDING_PAYOUT_DISCRIMINATOR,
+    }),
+  );
+
+  const signature = await sendTransaction(transaction, connection, {
+    skipPreflight: false,
+  });
+
+  await connection.confirmTransaction(signature, "confirmed");
+  return signature;
+}
+
 export async function placeProtocolOrder({
   connection,
   publicKey,

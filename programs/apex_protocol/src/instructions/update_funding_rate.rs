@@ -12,11 +12,22 @@ pub struct UpdateFundingRate<'info> {
 }
 
 pub fn handler(ctx: Context<UpdateFundingRate>) -> Result<()> {
+    let market_key = ctx.accounts.market.key();
     let market = &mut ctx.accounts.market;
     let now = ctx.accounts.clock.unix_timestamp;
     require!(
-        now >= market.last_funding_ts + FUNDING_INTERVAL,
+        now >= market
+            .last_funding_ts
+            .checked_add(FUNDING_INTERVAL)
+            .ok_or(ApexError::MathOverflow)?,
         ApexError::FundingTooEarly
+    );
+
+    // Bound the account list so this instruction cannot be used to grind
+    // through an unbounded set of accounts in a single call.
+    require!(
+        ctx.remaining_accounts.len() <= MAX_FUNDING_ACCOUNTS,
+        ApexError::TooManyAccounts
     );
 
     let total_oi = market
@@ -39,8 +50,16 @@ pub fn handler(ctx: Context<UpdateFundingRate>) -> Result<()> {
         .ok_or(ApexError::MathOverflow)?
         .checked_div(total_oi as i128)
         .ok_or(ApexError::MathOverflow)?;
-    market.funding_rate = i64::try_from(funding_rate).map_err(|_| ApexError::MathOverflow)?;
+    let funding_rate = i64::try_from(funding_rate).map_err(|_| ApexError::MathOverflow)?;
+    // Clamp so a corrupted or manipulated OI imbalance cannot translate into an
+    // unbounded PnL adjustment across every open position.
+    market.funding_rate = clamp_funding_rate(funding_rate);
     market.last_funding_ts = now;
+
+    // Track which position accounts have already been settled in this call.
+    // Without this, the same account could be passed multiple times and have
+    // funding applied repeatedly in a single instruction.
+    let mut settled: Vec<Pubkey> = Vec::with_capacity(ctx.remaining_accounts.len());
 
     for account_info in ctx.remaining_accounts.iter() {
         if account_info.owner != ctx.program_id {
@@ -49,22 +68,44 @@ pub fn handler(ctx: Context<UpdateFundingRate>) -> Result<()> {
         // Position accounts must be passed as writable to receive updates.
         require!(account_info.is_writable, ApexError::Unauthorized);
 
-        let mut data = account_info.try_borrow_mut_data()?;
-        if data.len() < 8 {
+        let account_key = *account_info.key;
+        if settled.contains(&account_key) {
             continue;
         }
 
-        // Use try_deserialize which validates the 8-byte discriminator,
-        // preventing deserialization of arbitrary accounts.
+        let mut data = account_info.try_borrow_mut_data()?;
+        if data.len() < 8 + Position::LEN {
+            continue;
+        }
+
+        // try_deserialize validates the 8-byte discriminator, so arbitrary
+        // program-owned accounts cannot be coerced into a Position.
         let mut slice: &[u8] = &data;
         let mut position = match Position::try_deserialize(&mut slice) {
             Ok(p) => p,
             Err(_) => continue, // not a Position account — skip
         };
 
-        if position.market != market.key() {
+        if position.market != market_key {
             continue;
         }
+        if position.size == 0 {
+            continue;
+        }
+
+        // Confirm this really is the canonical PDA for (market, owner). This is
+        // what stops a caller from supplying a look-alike program-owned account
+        // and having protocol state written into it.
+        let (expected_key, _) = Pubkey::find_program_address(
+            &[b"position", market_key.as_ref(), position.owner.as_ref()],
+            ctx.program_id,
+        );
+        require_keys_eq!(
+            expected_key,
+            account_key,
+            ApexError::InvalidPositionAccount
+        );
+
         let funding_delta = (position.size as i128)
             .checked_mul(market.funding_rate as i128)
             .ok_or(ApexError::MathOverflow)?
@@ -94,7 +135,10 @@ pub fn handler(ctx: Context<UpdateFundingRate>) -> Result<()> {
         // AnchorSerialize so it maps exactly to data[8..].
         let mut out = Vec::with_capacity(Position::LEN);
         AnchorSerialize::serialize(&position, &mut out)?;
+        require!(out.len() <= data.len() - 8, ApexError::MathOverflow);
         data[8..8 + out.len()].copy_from_slice(&out);
+
+        settled.push(account_key);
     }
 
     emit!(FundingUpdated {

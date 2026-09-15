@@ -58,11 +58,10 @@ pub fn handler(ctx: Context<CancelOrder>, order_index: u64, side: Side) -> Resul
         .checked_sub(refund)
         .ok_or(ApexError::MathOverflow)?;
 
-    orders.swap_remove(index);
-    match side {
-        Side::Long => orders.sort_by(|a, b| b.price.cmp(&a.price)),
-        Side::Short => orders.sort_by(|a, b| a.price.cmp(&b.price)),
-    }
+    // `remove` preserves the sorted ordering of the remaining entries, so no
+    // re-sort is required. `swap_remove` would have moved an arbitrary order
+    // into the removed slot and broken price priority until the next sort.
+    orders.remove(index);
 
     Ok(())
 }

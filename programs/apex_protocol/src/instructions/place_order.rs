@@ -104,14 +104,21 @@ pub fn handler(
         created_at: Clock::get()?.unix_timestamp,
     };
 
+    // Insert at the correct rank via binary search instead of re-sorting the
+    // whole book on every order. Bids sort by descending price, asks ascending;
+    // equal prices insert after existing ones to preserve time priority.
     match side {
         Side::Long => {
-            order_book.bids.push(order);
-            order_book.bids.sort_by(|a, b| b.price.cmp(&a.price));
+            let index = order_book
+                .bids
+                .partition_point(|existing| existing.price >= price);
+            order_book.bids.insert(index, order);
         }
         Side::Short => {
-            order_book.asks.push(order);
-            order_book.asks.sort_by(|a, b| a.price.cmp(&b.price));
+            let index = order_book
+                .asks
+                .partition_point(|existing| existing.price <= price);
+            order_book.asks.insert(index, order);
         }
     }
 

@@ -17,11 +17,37 @@ function getDatabaseUrl() {
   return url;
 }
 
+/**
+ * TLS settings for the Postgres connection.
+ *
+ * Certificate verification is ON by default. Managed providers (Neon, RDS,
+ * Supabase) present publicly trusted certificates, so disabling verification
+ * bought nothing and left the connection open to man-in-the-middle attacks
+ * despite `sslmode=require` being present in the URL. `DATABASE_SSL_NO_VERIFY`
+ * remains only as an explicit, logged escape hatch for self-hosted servers.
+ */
+function getSslConfig() {
+  if (process.env.DATABASE_SSL_NO_VERIFY === "true") {
+    console.warn(
+      "[db] TLS certificate verification is DISABLED via DATABASE_SSL_NO_VERIFY. Do not use this in production.",
+    );
+    return { rejectUnauthorized: false };
+  }
+
+  const ca = process.env.DATABASE_CA_CERT;
+  return ca ? { rejectUnauthorized: true as const, ca } : { rejectUnauthorized: true as const };
+}
+
 export function getPool() {
   if (!globalThis.apexPgPool) {
     globalThis.apexPgPool = new Pool({
       connectionString: getDatabaseUrl(),
-      ssl: { rejectUnauthorized: false },
+      ssl: getSslConfig(),
+      // Bound the pool so serverless invocations cannot exhaust Postgres
+      // connection slots under load.
+      max: Number.parseInt(process.env.DATABASE_POOL_MAX || "10", 10),
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 10_000,
     });
   }
 

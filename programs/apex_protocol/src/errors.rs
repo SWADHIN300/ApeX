@@ -38,4 +38,18 @@ pub enum ApexError {
     InsufficientLockedCollateral,
     #[msg("Protocol liquidity is insufficient; payout was deferred")]
     PayoutDeferred,
+    #[msg("Execution price is worse than the caller supplied limit")]
+    SlippageExceeded,
+    #[msg("No pending payout balance is available to claim")]
+    NoPendingPayout,
+    #[msg("Protocol liquidity is not yet sufficient to settle this claim")]
+    InsufficientProtocolLiquidity,
+    #[msg("An order cannot be matched against another order from the same owner")]
+    SelfTradeNotAllowed,
+    #[msg("Supplied account is not the canonical position PDA for its owner")]
+    InvalidPositionAccount,
+    #[msg("Too many accounts supplied for a single settlement call")]
+    TooManyAccounts,
+    #[msg("Oracle exponent is outside the supported range")]
+    InvalidOracleExponent,
 }

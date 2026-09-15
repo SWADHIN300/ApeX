@@ -17,9 +17,13 @@ pub struct OpenPosition<'info> {
         bump
     )]
     pub position: Account<'info, Position>,
-    #[account(mut)]
+    #[account(mut, constraint = vault.mint == market.base_mint @ ApexError::Unauthorized)]
     pub vault: Account<'info, TokenAccount>,
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = trader_token_account.owner == trader.key() @ ApexError::Unauthorized,
+        constraint = trader_token_account.mint == market.base_mint @ ApexError::Unauthorized,
+    )]
     pub trader_token_account: Account<'info, TokenAccount>,
     /// CHECK: validated by Pyth parser
     pub oracle: AccountInfo<'info>,
@@ -32,14 +36,19 @@ pub fn handler(
     side: Side,
     collateral: u64,
     leverage: u8,
+    price_limit: u64,
 ) -> Result<()> {
     validate_leverage(leverage)?;
     require!(collateral > 0, ApexError::InsufficientCollateral);
 
     let clock = Clock::get()?;
     let entry_price = get_oracle_price(&ctx.accounts.oracle, &clock)?;
+    // Reject fills worse than the caller's tolerance before any funds move.
+    enforce_entry_price_limit(&side, entry_price, price_limit)?;
+
     let added_notional = calc_notional(collateral, leverage)?;
     let added_size = calc_size(added_notional, entry_price)?;
+    require!(added_size > 0, ApexError::InsufficientCollateral);
 
     token::transfer(
         CpiContext::new(
@@ -61,6 +70,7 @@ pub fn handler(
         position.market = ctx.accounts.market.key();
         position.side = side.clone();
         position.collateral = collateral;
+        position.notional = added_notional;
         position.size = added_size;
         position.entry_price = entry_price;
         position.leverage = leverage;
@@ -80,8 +90,8 @@ pub fn handler(
         );
         require!(position.side == side, ApexError::PositionSideMismatch);
 
-        let current_notional = calc_notional(position.collateral, position.leverage)?;
-        let total_notional = current_notional
+        let total_notional = position
+            .notional
             .checked_add(added_notional)
             .ok_or(ApexError::MathOverflow)?;
         let total_collateral = position
@@ -97,6 +107,7 @@ pub fn handler(
         let effective_leverage = calc_effective_leverage(total_collateral, total_notional)?;
 
         position.collateral = total_collateral;
+        position.notional = total_notional;
         position.size = total_size;
         position.entry_price = blended_entry;
         position.leverage = effective_leverage;

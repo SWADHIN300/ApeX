@@ -490,10 +490,12 @@ describe("apex_protocol comprehensive test suite", () => {
             keeper: keeper.publicKey,
             market: marketPda,
             position: traderAPositionPda,
+            traderMargin: traderAMarginPda,
             vault: vaultKeypair.publicKey,
             keeperTokenAccount: keeperTokenAccount,
             oracle: mockOracleKeypair.publicKey,
             tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
           })
           .signers([keeper])
           .rpc();

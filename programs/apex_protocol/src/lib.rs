@@ -46,17 +46,24 @@ pub mod apex_protocol {
     pub fn withdraw_margin(ctx: Context<WithdrawMargin>, amount: u64) -> Result<()> {
         instructions::withdraw_margin::handler(ctx, amount)
     }
+
+    /// `price_limit` bounds the oracle entry price the caller is willing to
+    /// accept (0 disables the check). Long fills require `entry <= price_limit`,
+    /// shorts require `entry >= price_limit`.
     pub fn open_position(
         ctx: Context<OpenPosition>,
         side: Side,
         collateral: u64,
         leverage: u8,
+        price_limit: u64,
     ) -> Result<()> {
-        instructions::open_position::handler(ctx, side, collateral, leverage)
+        instructions::open_position::handler(ctx, side, collateral, leverage, price_limit)
     }
 
-    pub fn close_position(ctx: Context<ClosePosition>) -> Result<()> {
-        instructions::close_position::handler(ctx)
+    /// `price_limit` bounds the oracle exit price (0 disables the check).
+    /// Closing a long requires `exit >= price_limit`, a short `exit <= price_limit`.
+    pub fn close_position(ctx: Context<ClosePosition>, price_limit: u64) -> Result<()> {
+        instructions::close_position::handler(ctx, price_limit)
     }
 
     pub fn place_order(
@@ -83,6 +90,13 @@ pub mod apex_protocol {
 
     pub fn update_funding_rate(ctx: Context<UpdateFundingRate>) -> Result<()> {
         instructions::update_funding_rate::handler(ctx)
+    }
+
+    /// Withdraw a payout that `close_position` had to defer because protocol
+    /// liquidity was momentarily insufficient. Without this, deferred balances
+    /// were permanently unrecoverable.
+    pub fn claim_pending_payout(ctx: Context<ClaimPendingPayout>) -> Result<()> {
+        instructions::claim_pending_payout::handler(ctx)
     }
 }
 
@@ -116,7 +130,19 @@ pub fn get_oracle_price(oracle_account: &AccountInfo, clock: &Clock) -> Result<u
     normalize_pyth_price(price_abs, price_account.exponent)
 }
 
-fn normalize_pyth_price(raw_price: u64, exponent: i32) -> Result<u64> {
+/// Converts a raw Pyth price plus its exponent into the protocol's fixed-point
+/// representation (6 decimals).
+///
+/// A Pyth price is `raw * 10^exponent`. Rendering that at `PRICE_DECIMALS`
+/// fixed point therefore gives `raw * 10^exponent * PRICE_DECIMALS`, which for
+/// negative exponents is evaluated as `raw * PRICE_DECIMALS / 10^|exponent|`
+/// to avoid truncating to zero. Both branches are covered by unit tests below.
+pub fn normalize_pyth_price(raw_price: u64, exponent: i32) -> Result<u64> {
+    require!(
+        exponent.abs() <= MAX_ABS_PYTH_EXPONENT,
+        ApexError::InvalidOracleExponent
+    );
+
     let normalized = if exponent >= 0 {
         let scale = 10_u128
             .checked_pow(exponent as u32)
@@ -240,6 +266,34 @@ pub fn validate_leverage(leverage: u8) -> Result<()> {
     Ok(())
 }
 
+/// Rejects an entry fill whose oracle price is worse than the caller's limit.
+/// A `price_limit` of 0 opts out of the check.
+pub fn enforce_entry_price_limit(side: &Side, entry_price: u64, price_limit: u64) -> Result<()> {
+    if price_limit == 0 {
+        return Ok(());
+    }
+    let acceptable = match side {
+        Side::Long => entry_price <= price_limit,
+        Side::Short => entry_price >= price_limit,
+    };
+    require!(acceptable, ApexError::SlippageExceeded);
+    Ok(())
+}
+
+/// Rejects an exit fill whose oracle price is worse than the caller's limit.
+/// A `price_limit` of 0 opts out of the check.
+pub fn enforce_exit_price_limit(side: &Side, exit_price: u64, price_limit: u64) -> Result<()> {
+    if price_limit == 0 {
+        return Ok(());
+    }
+    let acceptable = match side {
+        Side::Long => exit_price >= price_limit,
+        Side::Short => exit_price <= price_limit,
+    };
+    require!(acceptable, ApexError::SlippageExceeded);
+    Ok(())
+}
+
 pub fn calc_notional(collateral: u64, leverage: u8) -> Result<u64> {
     let notional = (collateral as u128)
         .checked_mul(leverage as u128)
@@ -248,6 +302,7 @@ pub fn calc_notional(collateral: u64, leverage: u8) -> Result<u64> {
 }
 
 pub fn calc_size(notional: u64, entry_price: u64) -> Result<u64> {
+    require!(entry_price > 0, ApexError::OraclePriceStale);
     let size = (notional as u128)
         .checked_mul(PRICE_DECIMALS as u128)
         .ok_or(ApexError::MathOverflow)?
@@ -330,6 +385,155 @@ pub fn calc_effective_leverage(collateral: u64, notional: u64) -> Result<u8> {
     Ok(leverage)
 }
 
+/// Bounds a computed funding rate to +/- `MAX_FUNDING_RATE_BPS` so a single
+/// settlement can never apply an unbounded adjustment to open positions.
+pub fn clamp_funding_rate(rate: i64) -> i64 {
+    rate.clamp(-MAX_FUNDING_RATE_BPS, MAX_FUNDING_RATE_BPS)
+}
+
 pub fn market_signer_seeds<'a>(base_mint: &'a Pubkey, bump: &'a u8) -> [&'a [u8]; 3] {
     [b"market", base_mint.as_ref(), std::slice::from_ref(bump)]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── Oracle normalization ────────────────────────────────────────────────
+    // Pyth publishes price = raw * 10^exponent. The protocol stores prices at
+    // 6 decimals, so BTC at $65,000.12345678 with exponent -8 must land on
+    // 65_000_123_456 (i.e. 65000.123456 * 1e6).
+
+    #[test]
+    fn normalizes_typical_negative_exponent() {
+        // 65_000.12345678 with expo -8
+        let raw = 6_500_012_345_678_u64;
+        assert_eq!(normalize_pyth_price(raw, -8).unwrap(), 65_000_123_456);
+    }
+
+    #[test]
+    fn normalizes_six_decimal_feed_to_identity() {
+        // A feed already at 6 decimals must pass through unchanged.
+        assert_eq!(normalize_pyth_price(1_234_567_890, -6).unwrap(), 1_234_567_890);
+    }
+
+    #[test]
+    fn normalizes_zero_exponent() {
+        // price = 42 exactly -> 42 * 1e6
+        assert_eq!(normalize_pyth_price(42, 0).unwrap(), 42_000_000);
+    }
+
+    #[test]
+    fn normalizes_positive_exponent() {
+        // price = 5 * 10^2 = 500 -> 500 * 1e6
+        assert_eq!(normalize_pyth_price(5, 2).unwrap(), 500_000_000);
+    }
+
+    #[test]
+    fn rejects_absurd_exponent() {
+        assert!(normalize_pyth_price(1, 40).is_err());
+        assert!(normalize_pyth_price(1, -40).is_err());
+    }
+
+    #[test]
+    fn rejects_overflowing_positive_exponent() {
+        assert!(normalize_pyth_price(u64::MAX, 12).is_err());
+    }
+
+    // ── Slippage guards ─────────────────────────────────────────────────────
+
+    #[test]
+    fn entry_limit_rejects_long_above_limit() {
+        assert!(enforce_entry_price_limit(&Side::Long, 101, 100).is_err());
+        assert!(enforce_entry_price_limit(&Side::Long, 100, 100).is_ok());
+        assert!(enforce_entry_price_limit(&Side::Long, 99, 100).is_ok());
+    }
+
+    #[test]
+    fn entry_limit_rejects_short_below_limit() {
+        assert!(enforce_entry_price_limit(&Side::Short, 99, 100).is_err());
+        assert!(enforce_entry_price_limit(&Side::Short, 100, 100).is_ok());
+        assert!(enforce_entry_price_limit(&Side::Short, 101, 100).is_ok());
+    }
+
+    #[test]
+    fn exit_limit_rejects_long_below_limit() {
+        assert!(enforce_exit_price_limit(&Side::Long, 99, 100).is_err());
+        assert!(enforce_exit_price_limit(&Side::Long, 100, 100).is_ok());
+    }
+
+    #[test]
+    fn exit_limit_rejects_short_above_limit() {
+        assert!(enforce_exit_price_limit(&Side::Short, 101, 100).is_err());
+        assert!(enforce_exit_price_limit(&Side::Short, 100, 100).is_ok());
+    }
+
+    #[test]
+    fn zero_limit_disables_slippage_check() {
+        assert!(enforce_entry_price_limit(&Side::Long, u64::MAX, 0).is_ok());
+        assert!(enforce_exit_price_limit(&Side::Short, u64::MAX, 0).is_ok());
+    }
+
+    // ── Position math ───────────────────────────────────────────────────────
+
+    #[test]
+    fn size_is_notional_scaled_by_price() {
+        // $1000 notional at $50.00 -> 20 units
+        assert_eq!(calc_size(1_000_000_000, 50_000_000).unwrap(), 20_000_000);
+    }
+
+    #[test]
+    fn calc_size_rejects_zero_price() {
+        assert!(calc_size(1_000, 0).is_err());
+    }
+
+    #[test]
+    fn long_liquidation_price_sits_below_entry() {
+        // 10x long at $100: margin fraction 10%, maintenance 5%
+        // -> 100 * (10000 - 1000 + 500)/10000 = $95
+        let liq = calc_liquidation_price(100_000_000, 10, &Side::Long).unwrap();
+        assert_eq!(liq, 95_000_000);
+        assert!(liq < 100_000_000);
+    }
+
+    #[test]
+    fn short_liquidation_price_sits_above_entry() {
+        let liq = calc_liquidation_price(100_000_000, 10, &Side::Short).unwrap();
+        assert_eq!(liq, 105_000_000);
+        assert!(liq > 100_000_000);
+    }
+
+    #[test]
+    fn pnl_is_signed_by_side() {
+        // long 20 units from $50 -> $55 = +$100
+        let long = calc_pnl(&Side::Long, 50_000_000, 55_000_000, 20_000_000).unwrap();
+        assert_eq!(long, 100_000_000);
+        // same move shorted = -$100
+        let short = calc_pnl(&Side::Short, 50_000_000, 55_000_000, 20_000_000).unwrap();
+        assert_eq!(short, -100_000_000);
+    }
+
+    #[test]
+    fn weighted_average_blends_entries() {
+        // 10 units @ $100 + 10 units @ $200 -> $150
+        let blended =
+            weighted_average_price(10_000_000, 100_000_000, 10_000_000, 200_000_000).unwrap();
+        assert_eq!(blended, 150_000_000);
+    }
+
+    #[test]
+    fn effective_leverage_rounds_up_and_is_bounded() {
+        // 700 notional on 200 collateral -> ceil(3.5) = 4
+        assert_eq!(calc_effective_leverage(200, 700).unwrap(), 4);
+        // beyond 10x must be rejected outright
+        assert!(calc_effective_leverage(100, 1_100).is_err());
+        assert!(calc_effective_leverage(0, 100).is_err());
+    }
+
+    #[test]
+    fn funding_rate_clamp_bounds_magnitude() {
+        assert_eq!(clamp_funding_rate(10_000), MAX_FUNDING_RATE_BPS);
+        assert_eq!(clamp_funding_rate(-10_000), -MAX_FUNDING_RATE_BPS);
+        assert_eq!(clamp_funding_rate(7), 7);
+    }
 }

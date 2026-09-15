@@ -1,4 +1,5 @@
 pub mod cancel_order;
+pub mod claim_pending_payout;
 pub mod close_position;
 pub mod deposit_margin;
 pub mod initialize_market;
@@ -10,6 +11,7 @@ pub mod update_funding_rate;
 pub mod withdraw_margin;
 
 pub use cancel_order::*;
+pub use claim_pending_payout::*;
 pub use close_position::*;
 pub use deposit_margin::*;
 pub use initialize_market::*;

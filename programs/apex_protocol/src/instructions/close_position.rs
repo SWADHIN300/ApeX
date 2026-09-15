@@ -24,7 +24,7 @@ pub struct ClosePosition<'info> {
         bump
     )]
     pub pending_payout: Account<'info, PendingPayout>,
-    #[account(mut)]
+    #[account(mut, constraint = vault.mint == market.base_mint @ ApexError::Unauthorized)]
     pub vault: Account<'info, TokenAccount>,
     #[account(mut)]
     pub trader_token_account: Account<'info, TokenAccount>,
@@ -34,7 +34,7 @@ pub struct ClosePosition<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<ClosePosition>) -> Result<()> {
+pub fn handler(ctx: Context<ClosePosition>, price_limit: u64) -> Result<()> {
     require!(
         ctx.accounts.owner.key() == ctx.accounts.position.owner,
         ApexError::Unauthorized
@@ -51,6 +51,9 @@ pub fn handler(ctx: Context<ClosePosition>) -> Result<()> {
     let clock = Clock::get()?;
     let exit_price = get_oracle_price(&ctx.accounts.oracle, &clock)?;
     let position = &ctx.accounts.position;
+    // Reject exits worse than the caller's tolerance before settling.
+    enforce_exit_price_limit(&position.side, exit_price, price_limit)?;
+
     let realized_pnl = calc_pnl(
         &position.side,
         position.entry_price,
@@ -72,7 +75,10 @@ pub fn handler(ctx: Context<ClosePosition>) -> Result<()> {
     } else {
         0
     };
-    let notional = calc_notional(position.collateral, position.leverage)?;
+    // Use the exact notional recorded at fill time. Recomputing it from
+    // collateral * leverage drifts, because leverage is rounded up on blending,
+    // which used to make open interest saturate toward zero.
+    let notional = position.notional;
 
     ctx.accounts.market.insurance_fund = ctx
         .accounts
@@ -134,6 +140,11 @@ pub fn handler(ctx: Context<ClosePosition>) -> Result<()> {
             .pending_payouts_total
             .checked_add(deferred_payout)
             .ok_or(ApexError::MathOverflow)?;
+        // Recoverable later via `claim_pending_payout` once pools refill.
+        msg!(
+            "Payout of {} deferred to pending_payout PDA; claim once liquidity recovers",
+            deferred_payout
+        );
     }
 
     match position.side {
@@ -162,6 +173,17 @@ pub fn handler(ctx: Context<ClosePosition>) -> Result<()> {
     Ok(())
 }
 
+/// Splits a close into the part payable immediately and the part that must be
+/// deferred. Profit is drawn from the liquidity pool first, then the insurance
+/// fund.
+///
+/// The pools are the single source of truth for what is payable: whatever they
+/// cannot cover becomes a `PendingPayout` and is debited from the pools later,
+/// when it is actually claimed. Capping this figure by the vault's token balance
+/// would debit the pools here *and* again at claim time for the same amount, so
+/// the vault is deliberately not consulted. If the vault were ever short of its
+/// obligations the transfer below fails and the whole close reverts, which is
+/// the correct outcome.
 fn settle_close_accounting<'info>(
     market: &mut Account<'info, Market>,
     collateral: u64,

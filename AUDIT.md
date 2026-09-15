@@ -16,7 +16,7 @@ The scope of the audit includes all on-chain programs and instruction handlers i
 | **Errors** | `programs/apex_protocol/src/errors.rs` | Custom error codes |
 | **Events** | `programs/apex_protocol/src/events.rs` | Emitted protocol events |
 | **State Definitions** | `programs/apex_protocol/src/state/` | `Market`, `OrderBook`, `Position`, `TraderMarginAccount`, `PendingPayout` |
-| **Instruction Handlers** | `programs/apex_protocol/src/instructions/` | `initialize_market`, `deposit_margin`, `withdraw_margin`, `open_position`, `close_position`, `place_order`, `cancel_order`, `match_orders`, `liquidate`, `update_funding_rate` |
+| **Instruction Handlers** | `programs/apex_protocol/src/instructions/` | `initialize_market`, `deposit_margin`, `withdraw_margin`, `open_position`, `close_position`, `place_order`, `cancel_order`, `match_orders`, `liquidate`, `update_funding_rate`, `claim_pending_payout` |
 
 ---
 
@@ -34,14 +34,20 @@ The scope of the audit includes all on-chain programs and instruction handlers i
 - *Audit Focus*: Ensure an adversary cannot craft non-profitable orders to drain or lock counterparty collateral, and verify that partial fill math leaves zero rounding dust.
 
 ### C. Dynamic Funding Rate Settlement (`instructions/update_funding_rate.rs`)
-- Applies funding rate based on Open Interest imbalance (`OI_long - OI_short`).
+- Applies funding rate based on Open Interest imbalance (`OI_long - OI_short`), clamped to `MAX_FUNDING_RATE_BPS`.
 - Iterates over `ctx.remaining_accounts` and updates `unrealized_pnl` directly.
+- Each supplied account is verified to be the canonical `[b"position", market, owner]` PDA, de-duplicated within the call, and capped at `MAX_FUNDING_ACCOUNTS`.
 - *Audit Focus*: Ensure that passing malicious or duplicate account infos in `remaining_accounts` cannot corrupt unrelated state or drain funds.
 
 ### D. Liquidation Flow (`instructions/liquidate.rs`)
 - Triggered by keeper when mark price crosses `liquidation_price`.
-- Seizes collateral, transfers 50 bps keeper fee, and deposits remaining margin to the `insurance_fund`.
+- Values the position at the oracle mark: equity is floored at zero and capped at posted collateral, the keeper fee is drawn from that equity, any residual is credited back to the trader's margin account, forfeited collateral funds the liquidity pool, and shortfall beyond collateral is absorbed by the insurance fund as bad debt.
 - *Audit Focus*: Verify CPI signer seeds (`market_signer_seeds`) and ensure healthy accounts cannot be liquidated prematurely due to rounding errors.
+
+### E. Deferred Payout Recovery (`instructions/claim_pending_payout.rs`)
+- `close_position` records a `PendingPayout` PDA when pool + insurance liquidity cannot cover a profitable close.
+- `claim_pending_payout` lets the owner withdraw that balance as the pools refill, drawing from the liquidity pool first and then the insurance fund.
+- *Audit Focus*: Confirm the pools are debited exactly once per unit of deferred payout (at claim time, not at close time) and that `pending_payouts_total` cannot desynchronize from the sum of individual PDAs.
 
 ---
 

@@ -9,3 +9,17 @@ pub const FEE_DENOMINATOR: u64 = 10_000;
 pub const PRICE_DECIMALS: u64 = 1_000_000;
 pub const MAX_CONFIDENCE_BPS: u64 = 100;
 pub const BASE_FUNDING_RATE: i64 = 10;
+
+/// Hard ceiling on the magnitude of a single funding settlement, in bps.
+/// Prevents a corrupted or manipulated open-interest imbalance from
+/// applying an unbounded PnL adjustment to every open position.
+pub const MAX_FUNDING_RATE_BPS: i64 = 100;
+
+/// Upper bound on how many `Position` accounts a single `update_funding_rate`
+/// call may settle. Bounds compute usage and keeps the instruction from being
+/// used to grind through unrelated accounts.
+pub const MAX_FUNDING_ACCOUNTS: usize = 32;
+
+/// Pyth exponents outside this range are rejected rather than trusted. Real
+/// feeds sit near -8; anything wildly outside indicates a malformed account.
+pub const MAX_ABS_PYTH_EXPONENT: i32 = 12;

@@ -14,6 +14,8 @@ export interface DecodedOnChainPosition {
   market: string;
   side: "Long" | "Short";
   collateral: number;
+  /** Quote-denominated notional recorded on-chain at fill time. */
+  notional: number;
   size: number;
   entryPrice: number;
   leverage: number;
@@ -23,6 +25,13 @@ export interface DecodedOnChainPosition {
   createdAt: number;
   bump: number;
 }
+
+/**
+ * On-chain size of a Position account: 8-byte Anchor discriminator plus a
+ * 131-byte payload. Kept as an exact match so a program redeploy that changes
+ * the struct is detected instead of being mis-decoded.
+ */
+export const POSITION_ACCOUNT_SIZE = 139;
 
 function readU64LE(buffer: Buffer, offset: number): bigint {
   if (typeof buffer.readBigUInt64LE === "function") {
@@ -43,8 +52,8 @@ function readI64LE(buffer: Buffer, offset: number): bigint {
 }
 
 export function decodePositionAccount(data: Buffer): DecodedOnChainPosition | null {
-  // Account must have at least 131 bytes (8-byte discriminator + fields)
-  if (data.length < 131) return null;
+  // Layout: 8-byte discriminator + 131-byte payload (see state/position.rs).
+  if (data.length < POSITION_ACCOUNT_SIZE) return null;
 
   try {
     let offset = 8; // skip 8-byte discriminator
@@ -60,6 +69,9 @@ export function decodePositionAccount(data: Buffer): DecodedOnChainPosition | nu
     offset += 1;
 
     const collateral = Number(readU64LE(data, offset)) / SIZE_DECIMALS;
+    offset += 8;
+
+    const notional = Number(readU64LE(data, offset)) / SIZE_DECIMALS;
     offset += 8;
 
     const size = Number(readU64LE(data, offset)) / SIZE_DECIMALS;
@@ -95,6 +107,7 @@ export function decodePositionAccount(data: Buffer): DecodedOnChainPosition | nu
       market,
       side,
       collateral,
+      notional,
       size,
       entryPrice,
       leverage,
@@ -185,7 +198,10 @@ export function mapOnChainToFrontendPosition(
       ? markPrice - decoded.entryPrice
       : decoded.entryPrice - markPrice;
   const pnl = diff * decoded.size;
-  const initialMargin = decoded.collateral > 0 ? decoded.collateral : (decoded.size * decoded.entryPrice) / (decoded.leverage || 1);
+  const initialMargin =
+    decoded.collateral > 0
+      ? decoded.collateral
+      : decoded.notional / (decoded.leverage || 1);
   const roi = initialMargin > 0 ? (pnl / initialMargin) * 100 : 0;
 
   return {
