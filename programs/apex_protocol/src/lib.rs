@@ -98,6 +98,57 @@ pub mod apex_protocol {
     pub fn claim_pending_payout(ctx: Context<ClaimPendingPayout>) -> Result<()> {
         instructions::claim_pending_payout::handler(ctx)
     }
+
+    // ── Spot markets ────────────────────────────────────────────────────────
+    // Order-book spot trading for a base/quote token pair. Settlement moves
+    // real tokens between counterparties, so there is no leverage, funding, or
+    // liquidation involved.
+
+    pub fn initialize_spot_market(
+        ctx: Context<InitializeSpotMarket>,
+        fee_rate: u64,
+    ) -> Result<()> {
+        instructions::initialize_spot_market::handler(ctx, fee_rate)
+    }
+
+    pub fn deposit_spot(
+        ctx: Context<DepositSpot>,
+        base_amount: u64,
+        quote_amount: u64,
+    ) -> Result<()> {
+        instructions::deposit_spot::handler(ctx, base_amount, quote_amount)
+    }
+
+    pub fn withdraw_spot(
+        ctx: Context<WithdrawSpot>,
+        base_amount: u64,
+        quote_amount: u64,
+    ) -> Result<()> {
+        instructions::withdraw_spot::handler(ctx, base_amount, quote_amount)
+    }
+
+    /// `Side::Long` buys base with quote, `Side::Short` sells base for quote.
+    /// `size` is denominated in base units.
+    pub fn place_spot_order(
+        ctx: Context<PlaceSpotOrder>,
+        side: Side,
+        price: u64,
+        size: u64,
+    ) -> Result<()> {
+        instructions::place_spot_order::handler(ctx, side, price, size)
+    }
+
+    pub fn cancel_spot_order(
+        ctx: Context<CancelSpotOrder>,
+        order_index: u64,
+        side: Side,
+    ) -> Result<()> {
+        instructions::cancel_spot_order::handler(ctx, order_index, side)
+    }
+
+    pub fn match_spot_orders(ctx: Context<MatchSpotOrders>) -> Result<()> {
+        instructions::match_spot_orders::handler(ctx)
+    }
 }
 
 pub fn get_oracle_price(oracle_account: &AccountInfo, clock: &Clock) -> Result<u64> {
@@ -385,6 +436,38 @@ pub fn calc_effective_leverage(collateral: u64, notional: u64) -> Result<u8> {
     Ok(leverage)
 }
 
+/// Quote cost of filling `size` base units at `price`.
+///
+/// Rounds **up** so the protocol never under-collects from a buyer: a buyer
+/// must always reserve at least what the fill actually costs, otherwise a
+/// rounding remainder would be paid out of the pooled vault.
+pub fn spot_quote_amount(price: u64, size: u64) -> Result<u64> {
+    require!(price > 0 && size > 0, ApexError::InvalidSpotOrder);
+    let numerator = (price as u128)
+        .checked_mul(size as u128)
+        .ok_or(ApexError::MathOverflow)?;
+    let rounded_up = numerator
+        .checked_add(PRICE_DECIMALS as u128 - 1)
+        .ok_or(ApexError::MathOverflow)?
+        .checked_div(PRICE_DECIMALS as u128)
+        .ok_or(ApexError::MathOverflow)?;
+    u64::try_from(rounded_up).map_err(|_| ApexError::MathOverflow.into())
+}
+
+/// Taker fee on a quote amount, rounded down so it can never exceed the
+/// proceeds it is deducted from.
+pub fn spot_fee(quote_amount: u64, fee_rate_bps: u64) -> Result<u64> {
+    let fee = (quote_amount as u128)
+        .checked_mul(fee_rate_bps as u128)
+        .ok_or(ApexError::MathOverflow)?
+        .checked_div(FEE_DENOMINATOR as u128)
+        .ok_or(ApexError::MathOverflow)?;
+    let fee = u64::try_from(fee).map_err(|_| ApexError::MathOverflow)?;
+    // Defensive: a fee must never consume the entire fill.
+    require!(fee <= quote_amount, ApexError::MathOverflow);
+    Ok(fee)
+}
+
 /// Bounds a computed funding rate to +/- `MAX_FUNDING_RATE_BPS` so a single
 /// settlement can never apply an unbounded adjustment to open positions.
 pub fn clamp_funding_rate(rate: i64) -> i64 {
@@ -535,5 +618,63 @@ mod tests {
         assert_eq!(clamp_funding_rate(10_000), MAX_FUNDING_RATE_BPS);
         assert_eq!(clamp_funding_rate(-10_000), -MAX_FUNDING_RATE_BPS);
         assert_eq!(clamp_funding_rate(7), 7);
+    }
+
+    // ── Spot math ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn spot_quote_amount_is_price_times_size() {
+        // 2 base @ $50.00 = $100.00
+        assert_eq!(
+            spot_quote_amount(50_000_000, 2_000_000).unwrap(),
+            100_000_000
+        );
+    }
+
+    #[test]
+    fn spot_quote_amount_rounds_up_to_protect_the_vault() {
+        // A cost of 1.5 base units must round to 2, never 1: rounding down
+        // would let a buyer reserve less than the fill actually costs and the
+        // remainder would come out of pooled funds.
+        // price = 1.5 (1_500_000), size = 1 unit (1) -> 1.5 -> 2
+        assert_eq!(spot_quote_amount(1_500_000, 1).unwrap(), 2);
+    }
+
+    #[test]
+    fn spot_quote_amount_rejects_zero_inputs() {
+        assert!(spot_quote_amount(0, 1_000).is_err());
+        assert!(spot_quote_amount(1_000, 0).is_err());
+    }
+
+    #[test]
+    fn spot_quote_amount_rejects_overflow() {
+        assert!(spot_quote_amount(u64::MAX, u64::MAX).is_err());
+    }
+
+    #[test]
+    fn spot_fee_rounds_down_and_never_exceeds_notional() {
+        // 30 bps on $100 = $0.30
+        assert_eq!(spot_fee(100_000_000, 30).unwrap(), 300_000);
+        // Tiny notional rounds down to zero rather than over-charging.
+        assert_eq!(spot_fee(1, 30).unwrap(), 0);
+        // A zero fee rate is a valid no-op.
+        assert_eq!(spot_fee(100_000_000, 0).unwrap(), 0);
+    }
+
+    #[test]
+    fn spot_fee_leaves_positive_proceeds_for_seller() {
+        let quote = 100_000_000_u64;
+        let fee = spot_fee(quote, 100).unwrap(); // 1%
+        assert!(fee < quote);
+        assert_eq!(quote - fee, 99_000_000);
+    }
+
+    #[test]
+    fn buyer_refund_is_non_negative_when_filled_below_limit() {
+        // Buyer bid $51, fill at $50 for 2 base: reserved 102, cost 100.
+        let reserved = spot_quote_amount(51_000_000, 2_000_000).unwrap();
+        let cost = spot_quote_amount(50_000_000, 2_000_000).unwrap();
+        assert!(reserved >= cost);
+        assert_eq!(reserved - cost, 2_000_000);
     }
 }

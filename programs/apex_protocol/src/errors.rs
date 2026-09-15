@@ -52,4 +52,12 @@ pub enum ApexError {
     TooManyAccounts,
     #[msg("Oracle exponent is outside the supported range")]
     InvalidOracleExponent,
+    #[msg("Spot balance is insufficient for this order or withdrawal")]
+    InsufficientSpotBalance,
+    #[msg("Spot order size and price must both be greater than zero")]
+    InvalidSpotOrder,
+    #[msg("Base and quote mints must differ")]
+    InvalidSpotPair,
+    #[msg("Nothing to deposit or withdraw")]
+    EmptyAmount,
 }

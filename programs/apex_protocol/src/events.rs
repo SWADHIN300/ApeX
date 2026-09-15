@@ -52,3 +52,18 @@ pub struct PendingPayoutClaimed {
     pub amount: u64,
     pub remaining: u64,
 }
+
+#[event]
+pub struct SpotFilled {
+    pub market: Pubkey,
+    pub buyer: Pubkey,
+    pub seller: Pubkey,
+    /// Execution price in quote per base, at PRICE_DECIMALS precision.
+    pub price: u64,
+    /// Base-denominated fill size.
+    pub size: u64,
+    /// Quote paid by the buyer before fees.
+    pub quote_amount: u64,
+    /// Quote fee deducted from the seller's proceeds.
+    pub fee: u64,
+}
