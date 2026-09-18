@@ -6,12 +6,15 @@ export function usePositions() {
   const { positions, updatePositionsWithMarkPrice } = useTrade();
   const { market } = useMarket();
 
+  const price = market?.price;
+  const symbol = market?.symbol;
+
   // Update position PnL against current market price
   useEffect(() => {
-    if (market && market.price > 0) {
-      updatePositionsWithMarkPrice(market.symbol, market.price);
+    if (symbol && price && price > 0) {
+      updatePositionsWithMarkPrice(symbol, price);
     }
-  }, [market?.price, market?.symbol, updatePositionsWithMarkPrice]);
+  }, [price, symbol, updatePositionsWithMarkPrice]);
 
   return positions;
 }

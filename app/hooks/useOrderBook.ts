@@ -34,22 +34,27 @@ export function useOrderBook(preferOnChain: boolean = true) {
   const [bids, setBids] = useState<OrderBookLevel[]>([]);
   const [asks, setAsks] = useState<OrderBookLevel[]>([]);
   const [source, setSource] = useState<OrderBookSource>("unavailable");
+  const marketSymbol = market?.symbol;
 
   useEffect(() => {
-    if (!market) return;
-
-    // Reset whenever the market or the source preference changes.
-    setBids([]);
-    setAsks([]);
-    setSource("unavailable");
+    if (!marketSymbol) return;
 
     let cancelled = false;
     let cleanupFn: (() => void) | undefined;
 
+    // Reset asynchronously whenever the market or source preference changes.
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setBids([]);
+        setAsks([]);
+        setSource("unavailable");
+      }
+    });
+
     /** Centralized exchange depth, used for context when ApeX has no book. */
     const startReferenceFeed = () => {
       if (cancelled) return;
-      cleanupFn = subscribeOrderBook(market.symbol, (data) => {
+      cleanupFn = subscribeOrderBook(marketSymbol, (data) => {
         if (cancelled) return;
         setBids(data.bids);
         setAsks(data.asks);
@@ -66,9 +71,9 @@ export function useOrderBook(preferOnChain: boolean = true) {
     }
 
     try {
-      getMarketPdas(market.symbol); // throws when env vars are missing
+      getMarketPdas(marketSymbol); // throws when env vars are missing
 
-      fetchProtocolOrderBook(connection, market.symbol)
+      fetchProtocolOrderBook(connection, marketSymbol)
         .then((data) => {
           if (cancelled) return;
 
@@ -109,7 +114,7 @@ export function useOrderBook(preferOnChain: boolean = true) {
       cancelled = true;
       cleanupFn?.();
     };
-  }, [connection, market?.symbol, preferOnChain]);
+  }, [connection, marketSymbol, preferOnChain]);
 
   return { bids, asks, source };
 }

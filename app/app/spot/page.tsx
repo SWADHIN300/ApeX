@@ -227,14 +227,27 @@ export default function SpotPage() {
               <span className="text-right">Size</span>
             </div>
             <div className="flex flex-col-reverse">
-              {spot.asks.slice(0, 8).map((a, i) => (
-                <div key={`a${i}`} className="grid grid-cols-2 px-3 h-5 items-center t-data-sm">
-                  <span className="text-short">{fmt(a.price, 2)}</span>
-                  <span className="text-right">{fmt(a.size)}</span>
-                </div>
-              ))}
+              {spot.asks.slice(0, 8).map((a, i) => {
+                const maxAsk = Math.max(...spot.asks.slice(0, 8).map((x) => x.size), 1);
+                const depthPct = Math.min(100, Math.round((a.size / maxAsk) * 100));
+                return (
+                  <div
+                    key={`a${i}`}
+                    onClick={() => setPrice(a.price.toString())}
+                    className="relative grid grid-cols-2 px-3 h-6 items-center t-data-sm cursor-pointer hover:bg-bg-l3 transition-colors group"
+                    title="Click to set price"
+                  >
+                    <div
+                      className="absolute right-0 inset-y-0 bg-short/10 pointer-events-none transition-all"
+                      style={{ width: `${depthPct}%` }}
+                    />
+                    <span className="relative z-10 text-short font-mono font-medium">{fmt(a.price, 2)}</span>
+                    <span className="relative z-10 text-right font-mono text-text-dim group-hover:text-text-main">{fmt(a.size)}</span>
+                  </div>
+                );
+              })}
             </div>
-            <div className="py-1.5 px-3 border-y border-t-border-soft bg-bg-l2">
+            <div className="py-1.5 px-3 border-y border-t-border-soft bg-bg-l2 flex items-center justify-between">
               <span className="t-label-caps text-text-muted">
                 {spot.asks.length === 0 && spot.bids.length === 0
                   ? "No resting orders"
@@ -244,14 +257,32 @@ export default function SpotPage() {
                         : "--"
                     }`}
               </span>
+              {spot.asks[0] && spot.bids[0] && (
+                <span className="t-label-caps text-text-dim text-[10px]">
+                  Mid {fmt((spot.asks[0].price + spot.bids[0].price) / 2, 2)}
+                </span>
+              )}
             </div>
             <div>
-              {spot.bids.slice(0, 8).map((b, i) => (
-                <div key={`b${i}`} className="grid grid-cols-2 px-3 h-5 items-center t-data-sm">
-                  <span className="text-long">{fmt(b.price, 2)}</span>
-                  <span className="text-right">{fmt(b.size)}</span>
-                </div>
-              ))}
+              {spot.bids.slice(0, 8).map((b, i) => {
+                const maxBid = Math.max(...spot.bids.slice(0, 8).map((x) => x.size), 1);
+                const depthPct = Math.min(100, Math.round((b.size / maxBid) * 100));
+                return (
+                  <div
+                    key={`b${i}`}
+                    onClick={() => setPrice(b.price.toString())}
+                    className="relative grid grid-cols-2 px-3 h-6 items-center t-data-sm cursor-pointer hover:bg-bg-l3 transition-colors group"
+                    title="Click to set price"
+                  >
+                    <div
+                      className="absolute right-0 inset-y-0 bg-long/10 pointer-events-none transition-all"
+                      style={{ width: `${depthPct}%` }}
+                    />
+                    <span className="relative z-10 text-long font-mono font-medium">{fmt(b.price, 2)}</span>
+                    <span className="relative z-10 text-right font-mono text-text-dim group-hover:text-text-main">{fmt(b.size)}</span>
+                  </div>
+                );
+              })}
             </div>
           </section>
 
@@ -276,9 +307,20 @@ export default function SpotPage() {
             </div>
 
             <label className="block">
-              <span className="t-label-caps text-text-dim">
-                Price ({selected?.quoteSymbol ?? "quote"})
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="t-label-caps text-text-dim">
+                  Price ({selected?.quoteSymbol ?? "quote"})
+                </span>
+                {spot.asks[0] && (
+                  <button
+                    type="button"
+                    onClick={() => setPrice((side === "Buy" ? spot.asks[0]?.price : spot.bids[0]?.price ?? spot.asks[0]?.price).toString())}
+                    className="text-[10px] font-mono text-primary hover:underline"
+                  >
+                    Best {side === "Buy" ? "Ask" : "Bid"}
+                  </button>
+                )}
+              </div>
               <input
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
@@ -289,9 +331,14 @@ export default function SpotPage() {
             </label>
 
             <label className="block">
-              <span className="t-label-caps text-text-dim">
-                Size ({selected?.baseSymbol ?? "base"})
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="t-label-caps text-text-dim">
+                  Size ({selected?.baseSymbol ?? "base"})
+                </span>
+                <span className="text-[10px] font-mono text-text-dim">
+                  Avail: {side === "Buy" ? fmt(spot.balances.quoteFree) + " " + (selected?.quoteSymbol ?? "") : fmt(spot.balances.baseFree) + " " + (selected?.baseSymbol ?? "")}
+                </span>
+              </div>
               <input
                 value={size}
                 onChange={(e) => setSize(e.target.value)}
@@ -300,6 +347,33 @@ export default function SpotPage() {
                 className="mt-1 w-full bg-bg-l1 b-thin rounded-sm px-2 py-1.5 font-mono text-sm text-text-main outline-none focus:border-primary"
               />
             </label>
+
+            {/* Quick size buttons */}
+            <div className="grid grid-cols-4 gap-1">
+              {[0.25, 0.5, 0.75, 1].map((pct) => (
+                <button
+                  key={pct}
+                  type="button"
+                  onClick={() => {
+                    const p = Number.parseFloat(price);
+                    if (side === "Buy") {
+                      if (p > 0 && spot.balances.quoteFree > 0) {
+                        const maxQuote = spot.balances.quoteFree * pct;
+                        const calcSize = maxQuote / p;
+                        setSize(calcSize.toFixed(4));
+                      }
+                    } else {
+                      if (spot.balances.baseFree > 0) {
+                        setSize((spot.balances.baseFree * pct).toFixed(4));
+                      }
+                    }
+                  }}
+                  className="py-1 text-[10px] font-mono rounded bg-bg-l2 hover:bg-bg-l3 text-text-dim hover:text-text-main transition-colors"
+                >
+                  {pct * 100}%
+                </button>
+              ))}
+            </div>
 
             <div className="flex items-center justify-between t-body-sm text-text-dim">
               <span>{side === "Buy" ? "Quote reserved" : "Base reserved"}</span>
@@ -311,6 +385,17 @@ export default function SpotPage() {
                     : `${fmt(Number.parseFloat(size) || 0)} ${selected?.baseSymbol ?? ""}`}
               </span>
             </div>
+
+            {side === "Buy" && estimatedCost !== null && estimatedCost > spot.balances.quoteFree && (
+              <p className="text-[11px] text-amber-400 font-mono">
+                ⚠ Exceeds free quote balance ({fmt(spot.balances.quoteFree)}). Deposit below first.
+              </p>
+            )}
+            {side === "Sell" && Number.parseFloat(size) > spot.balances.baseFree && (
+              <p className="text-[11px] text-amber-400 font-mono">
+                ⚠ Exceeds free base balance ({fmt(spot.balances.baseFree)}). Deposit below first.
+              </p>
+            )}
 
             <button
               onClick={onPlaceOrder}

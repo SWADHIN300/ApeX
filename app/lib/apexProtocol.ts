@@ -767,6 +767,13 @@ export async function placeProtocolOrder({
       leverage,
     }),
   );
+  if (signers.length > 0) {
+    const { blockhash } = await connection.getLatestBlockhash("confirmed");
+    transaction.recentBlockhash = blockhash;
+    transaction.feePayer = publicKey;
+    transaction.partialSign(...signers);
+  }
+
   const signature = await sendTransaction(transaction, connection, {
     skipPreflight: false,
     signers,

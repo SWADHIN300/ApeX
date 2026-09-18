@@ -106,7 +106,7 @@ export function useSpotMarket(config: SpotMarketConfigEntry | null): UseSpotMark
     } catch {
       return null;
     }
-  }, [config?.baseMint, config?.quoteMint]);
+  }, [config]);
 
   const marketPda = useMemo(
     () => (mints ? getSpotMarketPda(mints.base, mints.quote) : null),
@@ -114,17 +114,17 @@ export function useSpotMarket(config: SpotMarketConfigEntry | null): UseSpotMark
   );
 
   useEffect(() => {
-    if (!config || !mints) {
-      setMarket(null);
-      setNotInitialized(false);
-      setOpenOrders([]);
-      return;
-    }
-
     let cancelled = false;
     let unsubscribe: (() => void) | undefined;
 
     const load = async () => {
+      if (!config || !mints) {
+        setMarket(null);
+        setNotInitialized(false);
+        setOpenOrders([]);
+        return;
+      }
+
       setIsLoading(true);
       setError(null);
 

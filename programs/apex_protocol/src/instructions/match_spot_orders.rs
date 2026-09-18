@@ -84,7 +84,11 @@ pub fn handler(ctx: Context<MatchSpotOrders>) -> Result<()> {
     // What the buyer actually owes, and what they had reserved at their own
     // (higher or equal) limit price. The difference is theirs to keep.
     let quote_cost = spot_quote_amount(fill_price, fill_size)?;
-    let quote_reserved = spot_quote_amount(bid.price, fill_size)?;
+    let quote_reserved = if fill_size >= bid.size {
+        bid.locked_collateral
+    } else {
+        spot_quote_amount(bid.price, fill_size)?.min(bid.locked_collateral)
+    };
     require!(quote_reserved >= quote_cost, ApexError::MathOverflow);
     let refund = quote_reserved
         .checked_sub(quote_cost)
@@ -188,8 +192,7 @@ fn consume_best_spot_order(
         .ok_or(ApexError::MathOverflow)?;
     orders[0].locked_collateral = orders[0]
         .locked_collateral
-        .checked_sub(reserved_consumed)
-        .ok_or(ApexError::MathOverflow)?;
+        .saturating_sub(reserved_consumed);
 
     Ok(())
 }

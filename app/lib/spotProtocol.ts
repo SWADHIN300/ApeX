@@ -329,6 +329,11 @@ export async function initializeSpotMarket({
     }),
   );
 
+  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  transaction.recentBlockhash = blockhash;
+  transaction.feePayer = publicKey;
+  transaction.partialSign(baseVault, quoteVault);
+
   const signature = await sendTransaction(transaction, connection, {
     skipPreflight: false,
     signers: [baseVault, quoteVault],
