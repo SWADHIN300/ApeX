@@ -5,14 +5,14 @@ seeds = true
 skip-lint = false
 
 [programs.devnet]
-apex_protocol = "E7hafM67eM1VWxo1LvKeYAzK3jk4TZKUbKMQqAadnd2s"
+apex_protocol = "D643vETCKW14hgvpmUoWZTYi65R9tijNm1RGmZFfS6g1"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
 cluster = "devnet"
-wallet = "~/.config/solana/id.json"
+wallet = "~/.config/solana/apex-fresh-deploy.json"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"

@@ -16,7 +16,7 @@ The scope of the audit includes all on-chain programs and instruction handlers i
 | **Errors** | `programs/apex_protocol/src/errors.rs` | Custom error codes |
 | **Events** | `programs/apex_protocol/src/events.rs` | Emitted protocol events |
 | **State Definitions** | `programs/apex_protocol/src/state/` | `Market`, `OrderBook`, `Position`, `TraderMarginAccount`, `PendingPayout` |
-| **Instruction Handlers** | `programs/apex_protocol/src/instructions/` | `initialize_market`, `deposit_margin`, `withdraw_margin`, `open_position`, `close_position`, `place_order`, `cancel_order`, `match_orders`, `liquidate`, `update_funding_rate`, `claim_pending_payout` |
+| **Instruction Handlers** | `programs/apex_protocol/src/instructions/` | `initialize_market`, `deposit_margin`, `withdraw_margin`, `open_position`, `close_position`, `place_order`, `cancel_order`, `match_orders`, `liquidate`, `update_funding_rate`, `claim_pending_payout`, `top_up_liquidity` (+ spot market handlers) |
 
 ---
 

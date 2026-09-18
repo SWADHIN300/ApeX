@@ -17,3 +17,7 @@ app/next-localhost*.log
 # Example env files are documentation, not secrets — keep them tracked.
 !.env.example
 !**/.env.example
+.tmp-*.json
+*.keypair.json
+*-keypair.json
+

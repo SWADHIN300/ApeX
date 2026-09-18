@@ -45,7 +45,7 @@ export const SIZE_DECIMALS = 1_000_000;
  *   Total           : 67
  */
 export const ORDER_SIZE_BYTES = 67;
-export const MAX_ORDERS = 500;
+export const MAX_ORDERS = 64;
 
 // ── Funding ──────────────────────────────────────────────────────────────────
 export const FUNDING_INTERVAL = 28_800; // 8 hours in seconds

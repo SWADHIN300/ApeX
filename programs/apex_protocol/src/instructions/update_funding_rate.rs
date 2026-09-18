@@ -106,7 +106,10 @@ pub fn handler(ctx: Context<UpdateFundingRate>) -> Result<()> {
             ApexError::InvalidPositionAccount
         );
 
-        let funding_delta = (position.size as i128)
+        // Funding is charged on the quote-denominated notional, not the base
+        // unit count. `position.size` is base units (from calc_size), so using
+        // it here under-scaled every funding payment by the asset price.
+        let funding_delta = (position.notional as i128)
             .checked_mul(market.funding_rate as i128)
             .ok_or(ApexError::MathOverflow)?
             .checked_div(FEE_DENOMINATOR as i128)

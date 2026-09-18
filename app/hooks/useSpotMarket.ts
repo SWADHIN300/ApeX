@@ -12,6 +12,7 @@ import {
   subscribeSpotOrderBook,
   type DecodedSpotMarket,
   type SpotBalances,
+  type SpotOpenOrder,
 } from "@/lib/spotProtocol";
 import type { OrderBookLevel } from "@/lib/types";
 
@@ -23,22 +24,35 @@ export interface SpotMarketConfigEntry {
   quoteSymbol: string;
 }
 
+export const DEFAULT_SPOT_MARKETS: SpotMarketConfigEntry[] = [
+  {
+    label: "SOL/USDC",
+    baseSymbol: "SOL",
+    quoteSymbol: "USDC",
+    baseMint: "So11111111111111111111111111111111111111112",
+    quoteMint:
+      process.env.NEXT_PUBLIC_APEX_DEVNET_BASE_MINT ||
+      process.env.NEXT_PUBLIC_APEX_BASE_MINT ||
+      "3NnctwUGZ8iXfK2bFbSKQMSQVJWgxhLveiwg5H3M98NE",
+  },
+];
+
 /**
  * Spot pairs come from NEXT_PUBLIC_APEX_SPOT_MARKETS, a JSON array of
- * { label, baseMint, quoteMint, baseSymbol, quoteSymbol }. Returning an empty
- * list is a valid state — the UI then explains how to configure one instead of
- * inventing a market that doesn't exist on chain.
+ * { label, baseMint, quoteMint, baseSymbol, quoteSymbol }. Falls back to
+ * DEFAULT_SPOT_MARKETS so the UI always has an operable trading pair.
  */
 export function getSpotMarketConfig(): SpotMarketConfigEntry[] {
   const raw = process.env.NEXT_PUBLIC_APEX_SPOT_MARKETS;
-  if (!raw) return [];
+  if (!raw) return DEFAULT_SPOT_MARKETS;
 
   try {
     const parsed = JSON.parse(raw) as SpotMarketConfigEntry[];
-    return parsed.filter((entry) => entry.baseMint && entry.quoteMint && entry.label);
+    const valid = parsed.filter((entry) => entry.baseMint && entry.quoteMint && entry.label);
+    return valid.length > 0 ? valid : DEFAULT_SPOT_MARKETS;
   } catch {
-    console.warn("NEXT_PUBLIC_APEX_SPOT_MARKETS is not valid JSON.");
-    return [];
+    console.warn("NEXT_PUBLIC_APEX_SPOT_MARKETS is not valid JSON. Using default markets.");
+    return DEFAULT_SPOT_MARKETS;
   }
 }
 
@@ -53,6 +67,7 @@ interface UseSpotMarketResult {
   balances: SpotBalances;
   bids: OrderBookLevel[];
   asks: OrderBookLevel[];
+  openOrders: SpotOpenOrder[];
   isLoading: boolean;
   error: string | null;
   refresh: () => void;
@@ -74,6 +89,7 @@ export function useSpotMarket(config: SpotMarketConfigEntry | null): UseSpotMark
   });
   const [bids, setBids] = useState<OrderBookLevel[]>([]);
   const [asks, setAsks] = useState<OrderBookLevel[]>([]);
+  const [openOrders, setOpenOrders] = useState<SpotOpenOrder[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -101,6 +117,7 @@ export function useSpotMarket(config: SpotMarketConfigEntry | null): UseSpotMark
     if (!config || !mints) {
       setMarket(null);
       setNotInitialized(false);
+      setOpenOrders([]);
       return;
     }
 
@@ -112,13 +129,30 @@ export function useSpotMarket(config: SpotMarketConfigEntry | null): UseSpotMark
       setError(null);
 
       try {
-        const [baseInfo, quoteInfo] = await Promise.all([
-          getMint(connection, mints.base),
-          getMint(connection, mints.quote),
-        ]);
+        let baseDec = 9;
+        let quoteDec = 6;
+        try {
+          const [baseInfo, quoteInfo] = await Promise.all([
+            getMint(connection, mints.base),
+            getMint(connection, mints.quote),
+          ]);
+          baseDec = baseInfo.decimals;
+          quoteDec = quoteInfo.decimals;
+        } catch {
+          if (
+            config.baseSymbol === "SOL" ||
+            mints.base.toBase58() === "So11111111111111111111111111111111111111112"
+          ) {
+            baseDec = 9;
+          } else {
+            baseDec = 6;
+          }
+          quoteDec = 6;
+        }
+
         if (cancelled) return;
-        setBaseDecimals(baseInfo.decimals);
-        setQuoteDecimals(quoteInfo.decimals);
+        setBaseDecimals(baseDec);
+        setQuoteDecimals(quoteDec);
 
         const decoded = await fetchSpotMarket(connection, mints.base, mints.quote);
         if (cancelled) return;
@@ -129,23 +163,31 @@ export function useSpotMarket(config: SpotMarketConfigEntry | null): UseSpotMark
         if (!decoded) {
           setBids([]);
           setAsks([]);
+          setOpenOrders([]);
           return;
         }
 
         const pda = getSpotMarketPda(mints.base, mints.quote);
-        const book = await fetchSpotOrderBook(connection, pda, baseInfo.decimals);
+        const book = await fetchSpotOrderBook(connection, pda, baseDec);
         if (cancelled) return;
         setBids(book.bids);
         setAsks(book.asks);
 
+        const userKey = publicKey?.toBase58();
+        const allOrders = [...book.rawBids, ...book.rawAsks];
+        setOpenOrders(userKey ? allOrders.filter((o) => o.owner === userKey) : []);
+
         unsubscribe = subscribeSpotOrderBook(
           connection,
           pda,
-          baseInfo.decimals,
+          baseDec,
           (update) => {
             if (cancelled) return;
             setBids(update.bids);
             setAsks(update.asks);
+            const currentKey = publicKey?.toBase58();
+            const liveOrders = [...update.rawBids, ...update.rawAsks];
+            setOpenOrders(currentKey ? liveOrders.filter((o) => o.owner === currentKey) : []);
           },
         );
 
@@ -154,8 +196,8 @@ export function useSpotMarket(config: SpotMarketConfigEntry | null): UseSpotMark
             connection,
             pda,
             publicKey,
-            baseInfo.decimals,
-            quoteInfo.decimals,
+            baseDec,
+            quoteDec,
           );
           if (!cancelled) setBalances(traderBalances);
         } else {
@@ -186,6 +228,7 @@ export function useSpotMarket(config: SpotMarketConfigEntry | null): UseSpotMark
     balances,
     bids,
     asks,
+    openOrders,
     isLoading,
     error,
     refresh,

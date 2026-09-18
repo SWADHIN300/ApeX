@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ExternalLink, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useMarket } from "@/contexts/MarketContext";
@@ -24,6 +24,7 @@ export default function OrderForm() {
   const [side, setSide] = useState<Side>("Long");
   const [orderType, setOrderType] = useState<OrderType>("Market");
   const [sizeInput, setSizeInput] = useState("");
+  const [priceInput, setPriceInput] = useState("");
   const [leverage, setLeverage] = useState(5);
   const [txStatus, setTxStatus] = useState<TxStatus>("idle");
   const [orderError, setOrderError] = useState("");
@@ -31,8 +32,24 @@ export default function OrderForm() {
 
   const orderTypes: OrderType[] = ["Market", "Limit", "Stop"];
 
+  useEffect(() => {
+    const handleSelectPrice = (e: Event) => {
+      const customEvent = e as CustomEvent<number>;
+      if (customEvent.detail) {
+        setOrderType("Limit");
+        setPriceInput(customEvent.detail.toFixed(2));
+      }
+    };
+    window.addEventListener("apex:select-price", handleSelectPrice);
+    return () => window.removeEventListener("apex:select-price", handleSelectPrice);
+  }, []);
+
   const sizeUsdc = parseFloat(sizeInput.replace(/,/g, "")) || 0;
-  const price = market?.price || 0;
+  const effectivePrice =
+    orderType === "Market"
+      ? (market?.price || 0)
+      : (parseFloat(priceInput.replace(/,/g, "")) || market?.price || 0);
+  const price = effectivePrice;
   
   const marginReq = sizeUsdc / leverage;
   const fee = sizeUsdc * 0.0004; // 0.04%
@@ -188,6 +205,32 @@ export default function OrderForm() {
           </button>
         ))}
       </div>
+
+      {/* Price input (for Limit and Stop orders) */}
+      {orderType !== "Market" && (
+        <div className="mb-4">
+          <div className="flex justify-between gap-3 mb-1">
+            <span className="t-label-caps text-text-muted shrink-0">
+              {orderType === "Limit" ? "Limit Price" : "Trigger Price"}
+            </span>
+            <span className="t-label-caps text-text-muted truncate">
+              Mark: ${market?.price ? market.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "---"}
+            </span>
+          </div>
+          <div className="relative">
+            <input
+              type="text"
+              value={priceInput}
+              onChange={(e) => setPriceInput(e.target.value)}
+              placeholder={market?.price ? market.price.toFixed(2) : "0.00"}
+              className="w-full bg-bg-l2 border border-t-border focus:border-primary focus:ring-1 focus:ring-primary p-3 t-data-md text-text-main outline-none rounded-md transition-all font-mono"
+            />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 t-data-sm text-text-muted">
+              USDC
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Size input */}
       <div className="mb-4">

@@ -35,6 +35,7 @@ pub struct Liquidate<'info> {
     #[account(
         mut,
         constraint = keeper_token_account.mint == market.base_mint @ ApexError::Unauthorized,
+        constraint = keeper_token_account.owner == keeper.key() @ ApexError::Unauthorized,
     )]
     pub keeper_token_account: Account<'info, TokenAccount>,
     /// CHECK: validated by Pyth parser

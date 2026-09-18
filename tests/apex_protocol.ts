@@ -104,6 +104,25 @@ describe("apex_protocol comprehensive test suite", () => {
       await provider.connection.confirmTransaction(sig, "confirmed");
     }
 
+    // Create the on-chain oracle account so match_orders/liquidate can pass it.
+    // It is System-owned with the Pyth header left unpopulated (zeros), which the
+    // program treats as "no trustworthy price in this call" — matching proceeds
+    // thanks to the lenient spread guard.
+    const oracleRent = await provider.connection.getMinimumBalanceForRentExemption(240);
+    const oracleSig = await provider.connection.sendTransaction(
+      new anchor.web3.Transaction().add(
+        anchor.web3.SystemProgram.createAccount({
+          fromPubkey: authority.publicKey,
+          newAccountPubkey: mockOracleKeypair.publicKey,
+          lamports: oracleRent,
+          space: 240,
+          programId: anchor.web3.SystemProgram.programId,
+        })
+      ),
+      [authority, mockOracleKeypair]
+    );
+    await provider.connection.confirmTransaction(oracleSig, "confirmed");
+
     // Create Base Mint (collateral token e.g. USDC, 6 decimals)
     baseMint = await createMint(
       provider.connection,
@@ -451,6 +470,7 @@ describe("apex_protocol comprehensive test suite", () => {
           bidPosition: traderAPositionPda,
           askPosition: traderBPositionPda,
           vault: vaultKeypair.publicKey,
+          oracle: mockOracleKeypair.publicKey,
           systemProgram: SystemProgram.programId,
         })
         .signers([keeper])
@@ -564,6 +584,67 @@ describe("apex_protocol comprehensive test suite", () => {
 
       orderBook = await program.account.orderBook.fetch(orderBookPda);
       expect(orderBook.bids.length).to.equal(0);
+    });
+  });
+
+  describe("8. Protocol Liquidity Top-up", () => {
+    it("seeds the liquidity pool and tracks it on the market", async () => {
+      const seed = new anchor.BN(500 * 10 ** 6); // 500 USDC
+      const poolBefore = (await program.account.market.fetch(marketPda)).liquidityPool.toNumber();
+
+      await program.methods
+        .topUpLiquidity(seed, true)
+        .accounts({
+          payer: traderA.publicKey,
+          market: marketPda,
+          vault: vaultKeypair.publicKey,
+          payerTokenAccount: traderATokenAccount,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([traderA])
+        .rpc();
+
+      const market = await program.account.market.fetch(marketPda);
+      expect(market.liquidityPool.toNumber()).to.equal(poolBefore + seed.toNumber());
+    });
+
+    it("seeds the insurance fund when target_liquidity_pool=false", async () => {
+      const seed = new anchor.BN(250 * 10 ** 6);
+      const fundBefore = (await program.account.market.fetch(marketPda)).insuranceFund.toNumber();
+
+      await program.methods
+        .topUpLiquidity(seed, false)
+        .accounts({
+          payer: traderB.publicKey,
+          market: marketPda,
+          vault: vaultKeypair.publicKey,
+          payerTokenAccount: traderBTokenAccount,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([traderB])
+        .rpc();
+
+      const market = await program.account.market.fetch(marketPda);
+      expect(market.insuranceFund.toNumber()).to.equal(fundBefore + seed.toNumber());
+    });
+
+    it("rejects a zero top-up", async () => {
+      try {
+        await program.methods
+          .topUpLiquidity(new anchor.BN(0), true)
+          .accounts({
+            payer: traderA.publicKey,
+            market: marketPda,
+            vault: vaultKeypair.publicKey,
+            payerTokenAccount: traderATokenAccount,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          })
+          .signers([traderA])
+          .rpc();
+        expect.fail("Should have failed with EmptyAmount");
+      } catch (err: any) {
+        expect(err.error?.errorCode?.code || err.toString()).to.include("EmptyAmount");
+      }
     });
   });
 });

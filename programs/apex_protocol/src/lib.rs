@@ -12,7 +12,7 @@ pub use events::*;
 pub use instructions::*;
 pub use state::*;
 
-declare_id!("E7hafM67eM1VWxo1LvKeYAzK3jk4TZKUbKMQqAadnd2s");
+declare_id!("D643vETCKW14hgvpmUoWZTYi65R9tijNm1RGmZFfS6g1");
 
 const PYTH_MAGIC: u32 = 0xa1b2c3d4;
 const PYTH_VERSION_2: u32 = 2;
@@ -84,6 +84,18 @@ pub mod apex_protocol {
         instructions::match_orders::handler(ctx)
     }
 
+    /// Seed protocol liquidity so profitable closes can be paid immediately
+    /// instead of being deferred forever on a balanced/underfunded book.
+    /// `target_liquidity_pool` selects `liquidity_pool` (true) or
+    /// `insurance_fund` (false).
+    pub fn top_up_liquidity(
+        ctx: Context<TopUpLiquidity>,
+        amount: u64,
+        target_liquidity_pool: bool,
+    ) -> Result<()> {
+        instructions::top_up_liquidity::handler(ctx, amount, target_liquidity_pool)
+    }
+
     pub fn liquidate(ctx: Context<Liquidate>) -> Result<()> {
         instructions::liquidate::handler(ctx)
     }
@@ -148,6 +160,12 @@ pub mod apex_protocol {
 
     pub fn match_spot_orders(ctx: Context<MatchSpotOrders>) -> Result<()> {
         instructions::match_spot_orders::handler(ctx)
+    }
+
+    /// Let the spot-market authority withdraw the taker fees accumulated by
+    /// `match_spot_orders` out of the quote vault.
+    pub fn sweep_spot_fees(ctx: Context<SweepSpotFees>) -> Result<()> {
+        instructions::sweep_spot_fees::handler(ctx)
     }
 }
 

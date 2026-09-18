@@ -10,7 +10,9 @@ import {
   type SpotMarketConfigEntry,
 } from "@/hooks/useSpotMarket";
 import {
+  cancelSpotOrder,
   depositSpot,
+  initializeSpotMarket,
   placeSpotOrder,
   withdrawSpot,
   type SpotSide,
@@ -66,6 +68,18 @@ export default function SpotPage() {
     }
   }
 
+  const onInitializeMarket = () =>
+    run("Initialize Market", () => {
+      if (!selected) throw new Error("No spot market selected.");
+      return initializeSpotMarket({
+        connection,
+        publicKey: publicKey!,
+        sendTransaction: sendTransaction!,
+        baseMint: new PublicKey(selected.baseMint),
+        quoteMint: new PublicKey(selected.quoteMint),
+      });
+    });
+
   const onPlaceOrder = () =>
     run("Order", () => {
       if (!selected) throw new Error("No spot market selected.");
@@ -83,6 +97,20 @@ export default function SpotPage() {
         side,
         price: p,
         size: s,
+      });
+    });
+
+  const onCancelOrder = (orderIndex: number, orderSide: SpotSide) =>
+    run("Cancel Order", () => {
+      if (!selected) throw new Error("No spot market selected.");
+      return cancelSpotOrder({
+        connection,
+        publicKey: publicKey!,
+        sendTransaction: sendTransaction!,
+        baseMint: new PublicKey(selected.baseMint),
+        quoteMint: new PublicKey(selected.quoteMint),
+        orderIndex,
+        side: orderSide,
       });
     });
 
@@ -165,12 +193,20 @@ export default function SpotPage() {
         </div>
 
         {spot.notInitialized && (
-          <div className="b-thin bg-bg-surface p-4 rounded-sm">
-            <p className="t-body-sm text-text-main">
-              This market has not been created on chain yet. Its PDA is derived from the token
-              pair, so it must be initialized once via{" "}
-              <span className="font-mono">initialize_spot_market</span> before trading.
-            </p>
+          <div className="b-thin bg-bg-surface p-4 rounded-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-l-2 border-l-amber-500">
+            <div>
+              <p className="t-label-caps text-amber-400 mb-1">Market Not Initialized On Chain</p>
+              <p className="t-body-sm text-text-main">
+                This spot market PDA has not been created on chain yet. Initialize it once to enable deposits, withdrawals, and order book trading.
+              </p>
+            </div>
+            <button
+              onClick={onInitializeMarket}
+              disabled={busy !== null || !walletReady}
+              className="px-4 py-2 rounded-sm t-label-caps font-semibold bg-primary text-black hover:bg-primary-light transition-colors whitespace-nowrap disabled:opacity-40"
+            >
+              {busy === "Initialize Market" ? "Initializing…" : "Initialize Market"}
+            </button>
           </div>
         )}
 
@@ -355,6 +391,58 @@ export default function SpotPage() {
             </div>
           </section>
         </div>
+
+        {/* Open Orders */}
+        <section className="b-thin bg-bg-surface rounded-sm overflow-hidden">
+          <div className="h-9 bb-thin flex items-center justify-between px-3">
+            <span className="t-label-caps text-text-main">Your Open Orders</span>
+            <span className="t-label-caps text-text-dim">
+              {spot.openOrders.length} {spot.openOrders.length === 1 ? "order" : "orders"}
+            </span>
+          </div>
+          {spot.openOrders.length === 0 ? (
+            <div className="p-4 text-center t-body-sm text-text-dim">
+              No open resting orders for {selected?.label}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left t-data-sm">
+                <thead>
+                  <tr className="bg-bg-l2 text-text-dim t-label-caps text-[10px]">
+                    <th className="px-3 py-2">Side</th>
+                    <th className="px-3 py-2">Price ({selected?.quoteSymbol})</th>
+                    <th className="px-3 py-2">Size ({selected?.baseSymbol})</th>
+                    <th className="px-3 py-2">Time</th>
+                    <th className="px-3 py-2 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-bg-l2">
+                  {spot.openOrders.map((ord) => (
+                    <tr key={`${ord.side}-${ord.index}`} className="hover:bg-bg-l1/50 transition-colors">
+                      <td className={`px-3 py-2 font-mono font-medium ${ord.side === "Buy" ? "text-long" : "text-short"}`}>
+                        {ord.side}
+                      </td>
+                      <td className="px-3 py-2 font-mono text-text-main">{fmt(ord.price, 2)}</td>
+                      <td className="px-3 py-2 font-mono text-text-main">{fmt(ord.size)}</td>
+                      <td className="px-3 py-2 font-mono text-text-dim">
+                        {ord.createdAt > 0 ? new Date(ord.createdAt * 1000).toLocaleTimeString() : "--"}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <button
+                          onClick={() => onCancelOrder(ord.index, ord.side)}
+                          disabled={busy !== null || !walletReady}
+                          className="px-2 py-0.5 text-xs rounded-sm bg-bg-l3 hover:bg-short/20 hover:text-short text-text-dim transition-colors disabled:opacity-40"
+                        >
+                          {busy === "Cancel Order" ? "…" : "Cancel"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
 
         {message && (
           <div className="b-thin bg-bg-surface p-3 rounded-sm">

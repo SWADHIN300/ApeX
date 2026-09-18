@@ -49,12 +49,48 @@ pub fn handler(ctx: Context<WithdrawMargin>, amount: u64) -> Result<()> {
         .ok_or(ApexError::MathOverflow)?;
     require!(available >= amount, ApexError::InsufficientCollateral);
 
-    ctx.accounts.margin_account.deposited_collateral = ctx
+    // Solvency guard: after this withdrawal the vault must still physically
+    // back every protocol-owned claim and margin obligation (liquidity pool,
+    // insurance fund, deferred payouts, and the committed protocol-level
+    // margin total). This stops withdrawals from ever draining reserves that
+    // belong to other traders or the protocol itself.
+    let committed = ctx
+        .accounts
+        .market
+        .liquidity_pool
+        .checked_add(ctx.accounts.market.insurance_fund)
+        .and_then(|v| v.checked_add(ctx.accounts.market.pending_payouts_total))
+        .ok_or(ApexError::MathOverflow)?;
+
+    // We cannot know the sum of all deposited_collateral across margin
+    // accounts from this single account, but we can approximate the
+    // protocol-wide margin obligation as (liquidity_pool + insurance_fund +
+    // pending_payouts_total + this account's remaining deposited_collateral).
+    // The vault must hold at least this much after the withdrawal.
+    // This is a conservative lower bound: the true total of all margin
+    // deposits could be higher, so a single withdrawal passing this guard
+    // does not guarantee full solvency for all traders simultaneously.
+    let remaining_margin = ctx
         .accounts
         .margin_account
         .deposited_collateral
         .checked_sub(amount)
         .ok_or(ApexError::MathOverflow)?;
+    let obligation = committed
+        .checked_add(remaining_margin)
+        .ok_or(ApexError::MathOverflow)?;
+    let vault_after = ctx
+        .accounts
+        .vault
+        .amount
+        .checked_sub(amount)
+        .ok_or(ApexError::MathOverflow)?;
+    require!(
+        vault_after >= obligation,
+        ApexError::InsufficientProtocolLiquidity
+    );
+
+    ctx.accounts.margin_account.deposited_collateral = remaining_margin;
 
     let signer_seeds =
         market_signer_seeds(&ctx.accounts.market.base_mint, &ctx.accounts.market.bump);

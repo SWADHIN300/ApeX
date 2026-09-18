@@ -36,7 +36,7 @@ type PlaceProtocolOrderParams = {
 };
 
 const DEFAULT_APEX_PROTOCOL_PROGRAM_ID =
-  "E7hafM67eM1VWxo1LvKeYAzK3jk4TZKUbKMQqAadnd2s";
+  "D643vETCKW14hgvpmUoWZTYi65R9tijNm1RGmZFfS6g1";
 const PLACE_ORDER_DISCRIMINATOR = Buffer.from([
   51, 194, 155, 175, 109, 130, 96, 106,
 ]);
@@ -141,36 +141,57 @@ function readProtocolOrder(data: Buffer, offset: number) {
   return { side, price, size, lockedCollateral, leverage, status, createdAt };
 }
 
+function aggregateLevels(levels: OrderBookLevel[]): OrderBookLevel[] {
+  const map = new Map<number, number>();
+  for (const lvl of levels) {
+    map.set(lvl.price, (map.get(lvl.price) || 0) + lvl.size);
+  }
+  return Array.from(map.entries()).map(([price, size]) => ({ price, size }));
+}
+
 export function decodeProtocolOrderBook(data: Buffer) {
+  if (data.length < 8 + 32 + 4) {
+    return { bids: [], asks: [] };
+  }
+
   let offset = 8 + 32;
   const asksLength = data.readUInt32LE(offset);
   offset += 4;
 
-  const asks: OrderBookLevel[] = [];
+  const rawAsks: OrderBookLevel[] = [];
   for (let index = 0; index < asksLength; index += 1) {
+    if (offset + ORDER_SIZE_BYTES > data.length) break;
     const order = readProtocolOrder(data, offset);
-    if (order.status === 0) {
-      asks.push({ price: order.price, size: order.size });
+    if (order.status === 0 && order.price > 0 && order.size > 0) {
+      rawAsks.push({ price: order.price, size: order.size });
     }
     offset += ORDER_SIZE_BYTES;
+  }
+
+  if (offset + 4 > data.length) {
+    return {
+      bids: [],
+      asks: aggregateLevels(rawAsks).sort((a, b) => a.price - b.price),
+    };
   }
 
   const bidsLength = data.readUInt32LE(offset);
   offset += 4;
 
-  const bids: OrderBookLevel[] = [];
+  const rawBids: OrderBookLevel[] = [];
   for (let index = 0; index < bidsLength; index += 1) {
+    if (offset + ORDER_SIZE_BYTES > data.length) break;
     const order = readProtocolOrder(data, offset);
-    if (order.status === 0) {
-      bids.push({ price: order.price, size: order.size });
+    if (order.status === 0 && order.price > 0 && order.size > 0) {
+      rawBids.push({ price: order.price, size: order.size });
     }
     offset += ORDER_SIZE_BYTES;
   }
 
-  return {
-    bids: bids.sort((a, b) => b.price - a.price),
-    asks: asks.sort((a, b) => a.price - b.price),
-  };
+  const asks = aggregateLevels(rawAsks).sort((a, b) => a.price - b.price);
+  const bids = aggregateLevels(rawBids).sort((a, b) => b.price - a.price);
+
+  return { bids, asks };
 }
 
 export async function fetchProtocolOrderBook(connection: Connection, pair: string) {
@@ -304,9 +325,17 @@ function createInitializeMarketInstruction({
   baseMint: PublicKey;
   vault: PublicKey;
 }) {
-  const oracle = new PublicKey(
-    process.env.NEXT_PUBLIC_APEX_ORACLE || SystemProgram.programId.toBase58(),
-  );
+  // Never auto-create a market with a non-oracle default: an unset/SystemProgram
+  // "oracle" makes every open/close/liquidate revert and, because the PDA is
+  // keyed by base mint, a wrong-signer init can also lock out the real deployer.
+  const oracleEnv = process.env.NEXT_PUBLIC_APEX_ORACLE;
+  if (!oracleEnv) {
+    throw new Error(
+      "NEXT_PUBLIC_APEX_ORACLE is not configured. A Pyth oracle address is required " +
+        "to initialize a market and to place orders.",
+    );
+  }
+  const oracle = new PublicKey(oracleEnv);
   const data = Buffer.alloc(48);
   INITIALIZE_MARKET_DISCRIMINATOR.copy(data, 0);
   writeU64LE(data, BigInt(DEFAULT_FEE_RATE_BPS), 8);

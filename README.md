@@ -74,12 +74,12 @@ ApeX/
 
 ## 🔗 Smart Contract Deployment (Solana Devnet)
 
-- **ApeX Protocol Program ID**: `E7hafM67eM1VWxo1LvKeYAzK3jk4TZKUbKMQqAadnd2s`
+- **ApeX Protocol Program ID**: `D643vETCKW14hgvpmUoWZTYi65R9tijNm1RGmZFfS6g1`
 - **Cluster**: `devnet`
 - **Base Collateral Mint**: Devnet USDC (`4zMMC9srt5Ri5X14GVnYj7wAVTJGN1YjBe5HL4s3bQDa`)
-- **ProgramData Address**: `3S4rHmH7E379ZdSE2S2kmRMJ8syQFYNXCXmdhzeq1Ke3`
-- **Upgrade Authority**: `FtsfZqDQeei5o55pJTAx7ajkzMErL477pWMFgsFGntMq`
-- **Deployed Size**: 730,776 bytes
+- **ProgramData Address**: `3pM37aoEZTM4vsDx3u2Lcu572rV1scstsUBJpauGpvsA`
+- **Upgrade Authority**: `DBkffDPNVAqFNfJPBTGepx7uu35uShUZ5cnLy1MBHV4W`
+- **Deployed Size**: 752,488 bytes
 
 ### Building and deploying
 

@@ -34,7 +34,7 @@ import * as dotenv from "dotenv";
 
 dotenv.config();
 
-const DEFAULT_PROGRAM_ID = "E7hafM67eM1VWxo1LvKeYAzK3jk4TZKUbKMQqAadnd2s";
+const DEFAULT_PROGRAM_ID = "D643vETCKW14hgvpmUoWZTYi65R9tijNm1RGmZFfS6g1";
 const DEFAULT_BASE_MINT = "4zMMC9srt5Ri5X14GVnYj7wAVTJGN1YjBe5HL4s3bQDa";
 
 // ── Protocol constants (mirror programs/apex_protocol/src/constants.rs) ──────

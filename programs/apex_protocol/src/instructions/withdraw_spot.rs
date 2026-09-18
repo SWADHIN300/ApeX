@@ -81,6 +81,18 @@ pub fn handler(ctx: Context<WithdrawSpot>, base_amount: u64, quote_amount: u64) 
     }
 
     if quote_amount > 0 {
+        // Accumulated taker fees must always remain physically held in the
+        // quote vault and can never be withdrawn by a user's quote balance.
+        let quote_after = ctx
+            .accounts
+            .quote_vault
+            .amount
+            .checked_sub(quote_amount)
+            .ok_or(ApexError::MathOverflow)?;
+        require!(
+            quote_after >= ctx.accounts.spot_market.fees_accrued,
+            ApexError::InsufficientProtocolLiquidity
+        );
         ctx.accounts.balance.quote_free = ctx
             .accounts
             .balance

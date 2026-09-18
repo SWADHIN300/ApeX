@@ -10,6 +10,7 @@ import {
   type AccountInfo,
 } from "@solana/web3.js";
 import {
+  createAssociatedTokenAccountIdempotentInstruction,
   getAssociatedTokenAddress,
   getMint,
   TOKEN_PROGRAM_ID,
@@ -45,6 +46,16 @@ export interface SpotBalances {
   baseLocked: number;
   quoteFree: number;
   quoteLocked: number;
+}
+
+export interface SpotOpenOrder {
+  index: number;
+  owner: string;
+  side: SpotSide;
+  price: number;
+  size: number;
+  lockedCollateral: number;
+  createdAt: number;
 }
 
 function readU64LE(buffer: Buffer, offset: number): bigint {
@@ -154,37 +165,73 @@ export async function fetchSpotBalances(
  * Decodes the spot order book. Reuses the shared `Order` layout, where for spot
  * `size` is in base units and `locked_collateral` is the reserved token amount.
  */
+function aggregateSpotLevels(levels: OrderBookLevel[]): OrderBookLevel[] {
+  const map = new Map<number, number>();
+  for (const lvl of levels) {
+    map.set(lvl.price, (map.get(lvl.price) || 0) + lvl.size);
+  }
+  return Array.from(map.entries()).map(([price, size]) => ({ price, size }));
+}
+
 export function decodeSpotOrderBook(data: Buffer, baseDecimals: number) {
+  if (data.length < 8 + 32 + 4) {
+    return { bids: [], asks: [], rawBids: [], rawAsks: [] };
+  }
+
   const baseScale = 10 ** baseDecimals;
   let offset = 8 + 32; // discriminator + market
 
-  const readLevels = (count: number): OrderBookLevel[] => {
+  const readOrders = (count: number, side: SpotSide) => {
     const levels: OrderBookLevel[] = [];
+    const rawOrders: SpotOpenOrder[] = [];
+
     for (let i = 0; i < count; i += 1) {
+      if (offset + ORDER_SIZE_BYTES > data.length) break;
+      const owner = new PublicKey(data.subarray(offset, offset + 32)).toBase58();
       const status = data.readUInt8(offset + 58);
-      if (status === 0) {
-        levels.push({
-          price: Number(readU64LE(data, offset + 33)) / PRICE_DECIMALS,
-          size: Number(readU64LE(data, offset + 41)) / baseScale,
+      const price = Number(readU64LE(data, offset + 33)) / PRICE_DECIMALS;
+      const size = Number(readU64LE(data, offset + 41)) / baseScale;
+      const lockedCollateral = Number(readU64LE(data, offset + 49));
+      const createdAt = Number(data.readBigInt64LE(offset + 59));
+
+      if (status === 0 && price > 0 && size > 0) {
+        levels.push({ price, size });
+        rawOrders.push({
+          index: i,
+          owner,
+          side,
+          price,
+          size,
+          lockedCollateral,
+          createdAt,
         });
       }
       offset += ORDER_SIZE_BYTES;
     }
-    return levels;
+    return { levels, rawOrders };
   };
 
   const asksLength = data.readUInt32LE(offset);
   offset += 4;
-  const asks = readLevels(asksLength);
+  const asksResult = readOrders(asksLength, "Sell");
+
+  if (offset + 4 > data.length) {
+    return {
+      bids: [],
+      asks: aggregateSpotLevels(asksResult.levels).sort((a, b) => a.price - b.price),
+      rawBids: [],
+      rawAsks: asksResult.rawOrders,
+    };
+  }
 
   const bidsLength = data.readUInt32LE(offset);
   offset += 4;
-  const bids = readLevels(bidsLength);
+  const bidsResult = readOrders(bidsLength, "Buy");
 
-  return {
-    bids: bids.sort((a, b) => b.price - a.price),
-    asks: asks.sort((a, b) => a.price - b.price),
-  };
+  const asks = aggregateSpotLevels(asksResult.levels).sort((a, b) => a.price - b.price);
+  const bids = aggregateSpotLevels(bidsResult.levels).sort((a, b) => b.price - a.price);
+
+  return { bids, asks, rawBids: bidsResult.rawOrders, rawAsks: asksResult.rawOrders };
 }
 
 export async function fetchSpotOrderBook(
@@ -193,7 +240,7 @@ export async function fetchSpotOrderBook(
   baseDecimals: number,
 ) {
   const account = await connection.getAccountInfo(getSpotOrderBookPda(spotMarket));
-  if (!account) return { bids: [], asks: [] };
+  if (!account) return { bids: [], asks: [], rawBids: [], rawAsks: [] };
   return decodeSpotOrderBook(account.data, baseDecimals);
 }
 
@@ -201,7 +248,7 @@ export function subscribeSpotOrderBook(
   connection: Connection,
   spotMarket: PublicKey,
   baseDecimals: number,
-  callback: (data: { bids: OrderBookLevel[]; asks: OrderBookLevel[] }) => void,
+  callback: (data: { bids: OrderBookLevel[]; asks: OrderBookLevel[]; rawBids: SpotOpenOrder[]; rawAsks: SpotOpenOrder[] }) => void,
 ) {
   const listenerId = connection.onAccountChange(
     getSpotOrderBookPda(spotMarket),
@@ -216,9 +263,15 @@ export function subscribeSpotOrderBook(
   };
 }
 
-async function getDecimals(connection: Connection, mint: PublicKey) {
-  const info = await getMint(connection, mint);
-  return info.decimals;
+async function getDecimals(connection: Connection, mint: PublicKey): Promise<number> {
+  try {
+    const info = await getMint(connection, mint);
+    return info.decimals;
+  } catch {
+    // Graceful fallback if mint query fails
+    if (mint.toBase58() === "So11111111111111111111111111111111111111112") return 9;
+    return 6;
+  }
 }
 
 function toRaw(amount: number, decimals: number): bigint {
@@ -319,18 +372,28 @@ export async function depositSpot({
   data.writeBigUInt64LE(toRaw(baseAmount, baseDecimals), 8);
   data.writeBigUInt64LE(toRaw(quoteAmount, quoteDecimals), 16);
 
-  const transaction = new Transaction().add(
+  const traderBase = await getAssociatedTokenAddress(baseMint, publicKey);
+  const traderQuote = await getAssociatedTokenAddress(quoteMint, publicKey);
+
+  const transaction = new Transaction();
+  // Ensure trader ATAs exist idempotently before deposit
+  transaction.add(
+    createAssociatedTokenAccountIdempotentInstruction(publicKey, traderBase, publicKey, baseMint),
+    createAssociatedTokenAccountIdempotentInstruction(publicKey, traderQuote, publicKey, quoteMint),
+  );
+
+  const keys = await spotBalanceKeys({
+    publicKey,
+    market,
+    baseMint,
+    quoteMint,
+    includeSystemProgram: true,
+  });
+
+  transaction.add(
     new TransactionInstruction({
       programId: getApexProtocolProgramId(),
-      keys: await spotBalanceKeys({
-        connection,
-        publicKey,
-        market,
-        baseMint,
-        quoteMint,
-        writableMarket: false,
-        includeSystemProgram: true,
-      }),
+      keys,
       data,
     }),
   );
@@ -375,18 +438,28 @@ export async function withdrawSpot({
   data.writeBigUInt64LE(toRaw(baseAmount, baseDecimals), 8);
   data.writeBigUInt64LE(toRaw(quoteAmount, quoteDecimals), 16);
 
-  const transaction = new Transaction().add(
+  const traderBase = await getAssociatedTokenAddress(baseMint, publicKey);
+  const traderQuote = await getAssociatedTokenAddress(quoteMint, publicKey);
+
+  const transaction = new Transaction();
+  // Ensure trader ATAs exist idempotently before withdraw destination transfer
+  transaction.add(
+    createAssociatedTokenAccountIdempotentInstruction(publicKey, traderBase, publicKey, baseMint),
+    createAssociatedTokenAccountIdempotentInstruction(publicKey, traderQuote, publicKey, quoteMint),
+  );
+
+  const keys = await spotBalanceKeys({
+    publicKey,
+    market,
+    baseMint,
+    quoteMint,
+    includeSystemProgram: false,
+  });
+
+  transaction.add(
     new TransactionInstruction({
       programId: getApexProtocolProgramId(),
-      keys: await spotBalanceKeys({
-        connection,
-        publicKey,
-        market,
-        baseMint,
-        quoteMint,
-        writableMarket: false,
-        includeSystemProgram: false,
-      }),
+      keys,
       data,
     }),
   );
@@ -401,19 +474,16 @@ export async function withdrawSpot({
  * whether they need the system program (deposit may init the balance PDA).
  */
 async function spotBalanceKeys({
-  connection,
   publicKey,
   market,
   baseMint,
   quoteMint,
   includeSystemProgram,
 }: {
-  connection: Connection;
   publicKey: PublicKey;
   market: DecodedSpotMarket;
   baseMint: PublicKey;
   quoteMint: PublicKey;
-  writableMarket: boolean;
   includeSystemProgram: boolean;
 }) {
   const spotMarket = getSpotMarketPda(baseMint, quoteMint);
@@ -421,16 +491,6 @@ async function spotBalanceKeys({
     getAssociatedTokenAddress(baseMint, publicKey),
     getAssociatedTokenAddress(quoteMint, publicKey),
   ]);
-
-  const [baseAccount, quoteAccount] = await Promise.all([
-    connection.getAccountInfo(traderBase),
-    connection.getAccountInfo(traderQuote),
-  ]);
-  if (!baseAccount || !quoteAccount) {
-    throw new Error(
-      "Your wallet needs token accounts for both sides of this market before trading.",
-    );
-  }
 
   const keys = [
     { pubkey: publicKey, isSigner: true, isWritable: true },
