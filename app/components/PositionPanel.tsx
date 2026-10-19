@@ -18,18 +18,26 @@ export default function PositionPanel({
   onToggle?: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<Tab>("Positions");
+  const [closingId, setClosingId] = useState<string | null>(null);
+  const [closeError, setCloseError] = useState("");
   const positions = usePositions();
   const { trades, closePosition } = useTrade();
   const { market } = useMarket();
 
-  const handleClose = (id: string) => {
-    // We assume current market price if closing active pair, else wait, to be perfectly accurate we'd fetch the exact price of the pair being closed.
-    // Since this is a demo, if the position is the active market, use market.price, else use position's markPrice.
+  const handleClose = async (id: string) => {
     const pos = positions.find((p) => p.id === id);
     if (!pos) return;
-    
-    const closePrice = (pos.pair === market?.symbol && market?.price) ? market.price : pos.markPrice;
-    closePosition(id, closePrice);
+
+    const closePrice = pos.pair === market?.symbol && market?.price ? market.price : pos.markPrice;
+    setClosingId(id);
+    setCloseError("");
+    try {
+      await closePosition(id, closePrice);
+    } catch (error) {
+      setCloseError(error instanceof Error ? error.message : "Could not close position.");
+    } finally {
+      setClosingId(null);
+    }
   };
 
   return (
@@ -75,6 +83,7 @@ export default function PositionPanel({
           isOpen ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       >
+        {closeError && <p role="alert" className="px-4 py-2 text-sm text-text-error">{closeError}</p>}
         {activeTab === "Positions" && (
           <table className="w-full min-w-[760px] text-left">
             <thead className="bg-bg-l2 bb-thin sticky top-0 z-10">
@@ -146,11 +155,12 @@ export default function PositionPanel({
                       <button className="px-3 py-1 bg-bg-l3 border border-t-border-soft t-label-caps text-text-muted hover:bg-bg-l4">
                         TP/SL
                       </button>
-                      <button 
-                        onClick={() => handleClose(pos.id)}
-                        className="px-3 py-1 bg-bg-l3 border border-t-border-soft t-label-caps text-text-muted hover:bg-text-error/20 hover:text-text-error transition-all"
+                      <button
+                        onClick={() => void handleClose(pos.id)}
+                        disabled={closingId !== null}
+                        className="px-3 py-1 bg-bg-l3 border border-t-border-soft t-label-caps text-text-muted hover:bg-text-error/20 hover:text-text-error transition-all disabled:opacity-50"
                       >
-                        Close
+                        {closingId === pos.id ? "Closing…" : "Close"}
                       </button>
                     </div>
                   </td>

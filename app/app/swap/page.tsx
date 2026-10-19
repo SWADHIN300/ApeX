@@ -14,6 +14,7 @@ import {
 } from "@/lib/swapTokens";
 
 type QuoteResponse = {
+  provider: "jupiter" | "raydium";
   inputMint: string;
   inAmount: string;
   outputMint: string;
@@ -21,10 +22,12 @@ type QuoteResponse = {
   otherAmountThreshold?: string;
   priceImpactPct?: string;
   routePlan?: { swapInfo?: { label?: string }; percent?: number }[];
+  providerQuote?: unknown;
 };
 
 type SwapResponse = {
-  swapTransaction: string;
+  provider: "jupiter" | "raydium";
+  transactions: string[];
   lastValidBlockHeight?: number;
 };
 
@@ -32,7 +35,7 @@ export default function SwapPage() {
   const { network } = useNetwork();
   const { connection } = useConnection();
   const { publicKey, connected, sendTransaction } = useWallet();
-  const tokens = useMemo(() => getSwapTokens(), []);
+  const tokens = useMemo(() => getSwapTokens(network), [network]);
   const [inputToken, setInputToken] = useState<SwapToken | null>(null);
   const [outputToken, setOutputToken] = useState<SwapToken | null>(null);
   const [amount, setAmount] = useState("");
@@ -83,7 +86,7 @@ export default function SwapPage() {
 
     try {
       const params = new URLSearchParams({
-        network: "mainnet-beta",
+        network,
         inputMint: inputToken.mint,
         outputMint: outputToken.mint,
         amount: atomicAmount,
@@ -117,26 +120,25 @@ export default function SwapPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          network: "mainnet-beta",
+          network,
+          provider: quote.provider,
           quoteResponse: quote,
           userPublicKey: publicKey.toBase58(),
         }),
       });
       const body = (await response.json()) as SwapResponse & { error?: string };
 
-      if (!response.ok || !body.swapTransaction) {
+      if (!response.ok || !body.transactions?.length || body.provider !== quote.provider) {
         throw new Error(body.error ?? "Unable to build swap transaction.");
       }
 
-      const transaction = VersionedTransaction.deserialize(
-        Buffer.from(body.swapTransaction, "base64"),
-      );
-      const txSignature = await sendTransaction(transaction, connection, {
-        skipPreflight: false,
-      });
-
-      await connection.confirmTransaction(txSignature, "confirmed");
-      setSignature(txSignature);
+      let lastSignature = "";
+      for (const encodedTransaction of body.transactions) {
+        const transaction = VersionedTransaction.deserialize(Buffer.from(encodedTransaction, "base64"));
+        lastSignature = await sendTransaction(transaction, connection, { skipPreflight: false });
+        await connection.confirmTransaction(lastSignature, "confirmed");
+      }
+      setSignature(lastSignature);
       setQuote(null);
       setAmount("");
     } catch (err) {
@@ -170,7 +172,9 @@ export default function SwapPage() {
                 Token Swap
               </h2>
               <p className="font-ui text-body-sm text-on-surface-variant mt-1">
-                Quotes are routed through the configured swap provider.
+                {network === "devnet"
+                  ? "Devnet swaps use Raydium test pools when a route and liquidity are available."
+                  : "Mainnet swaps are routed through Jupiter."}
               </p>
             </div>
             <span className="t-label-caps text-on-surface-variant">

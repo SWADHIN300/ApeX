@@ -40,12 +40,14 @@ function getSslConfig() {
 
 export function getPool() {
   if (!globalThis.apexPgPool) {
+    const configuredMax = Number.parseInt(process.env.DATABASE_POOL_MAX || "10", 10);
+    const max = Number.isFinite(configuredMax) ? Math.min(Math.max(configuredMax, 1), 50) : 10;
     globalThis.apexPgPool = new Pool({
       connectionString: getDatabaseUrl(),
       ssl: getSslConfig(),
       // Bound the pool so serverless invocations cannot exhaust Postgres
       // connection slots under load.
-      max: Number.parseInt(process.env.DATABASE_POOL_MAX || "10", 10),
+      max,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 10_000,
     });
@@ -154,7 +156,11 @@ export async function ensureSchema() {
         CREATE INDEX IF NOT EXISTS candles_lookup_idx
           ON candles (pair, timeframe, bucket_start DESC);
       `)
-      .then(() => undefined);
+      .then(() => undefined)
+      .catch((error) => {
+        globalThis.apexDbReady = undefined;
+        throw error;
+      });
   }
 
   return globalThis.apexDbReady;

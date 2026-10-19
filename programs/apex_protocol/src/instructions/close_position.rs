@@ -16,16 +16,15 @@ pub struct ClosePosition<'info> {
         bump = position.bump
     )]
     pub position: Account<'info, Position>,
-    /// Optional pending_payout PDA. Created on-demand only when the protocol
-    /// cannot pay the full close amount immediately (deferred_payout > 0).
-    /// Using `Option<Account>` avoids wasting the trader's rent on closes
-    /// that do not trigger a deferred payout.
+    /// Initialized on close so an underfunded payout can be recorded and claimed later.
     #[account(
-        mut,
+        init_if_needed,
+        payer = owner,
+        space = 8 + PendingPayout::LEN,
         seeds = [b"pending_payout", market.key().as_ref(), owner.key().as_ref()],
         bump
     )]
-    pub pending_payout: Option<Account<'info, PendingPayout>>,
+    pub pending_payout: Account<'info, PendingPayout>,
     #[account(mut, constraint = vault.mint == market.base_mint @ ApexError::Unauthorized)]
     pub vault: Account<'info, TokenAccount>,
     #[account(mut)]
@@ -61,7 +60,9 @@ pub fn handler(ctx: Context<ClosePosition>, price_limit: u64) -> Result<()> {
         position.entry_price,
         exit_price,
         position.size,
-    )?;
+    )?
+    .checked_add(position.unrealized_pnl)
+    .ok_or(ApexError::MathOverflow)?;
     let fee_base = position
         .collateral
         .checked_add(realized_pnl.max(0) as u64)
@@ -77,6 +78,16 @@ pub fn handler(ctx: Context<ClosePosition>, price_limit: u64) -> Result<()> {
     } else {
         0
     };
+    let pending_payout = &mut ctx.accounts.pending_payout;
+    if pending_payout.owner == Pubkey::default() {
+        pending_payout.owner = ctx.accounts.owner.key();
+        pending_payout.market = ctx.accounts.market.key();
+        pending_payout.amount = 0;
+        pending_payout.created_at = clock.unix_timestamp;
+        pending_payout.bump = ctx.bumps.pending_payout;
+    }
+    require_keys_eq!(pending_payout.owner, ctx.accounts.owner.key(), ApexError::Unauthorized);
+    require_keys_eq!(pending_payout.market, ctx.accounts.market.key(), ApexError::Unauthorized);
     // Use the exact notional recorded at fill time. Recomputing it from
     // collateral * leverage drifts, because leverage is rounded up on blending,
     // which used to make open interest saturate toward zero.
@@ -116,30 +127,7 @@ pub fn handler(ctx: Context<ClosePosition>, price_limit: u64) -> Result<()> {
     }
 
     if deferred_payout > 0 {
-        let pending = ctx
-            .accounts
-            .pending_payout
-            .as_mut()
-            .ok_or(ApexError::NoPendingPayout)?;
-        if pending.owner == Pubkey::default() {
-            pending.owner = ctx.accounts.owner.key();
-            pending.market = ctx.accounts.market.key();
-            pending.amount = 0;
-            pending.created_at = clock.unix_timestamp;
-            pending.bump = ctx
-                .bumps
-                .pending_payout
-                .ok_or(ApexError::NoPendingPayout)?;
-        }
-        require!(
-            pending.owner == ctx.accounts.owner.key(),
-            ApexError::Unauthorized
-        );
-        require!(
-            pending.market == ctx.accounts.market.key(),
-            ApexError::Unauthorized
-        );
-        pending.amount = pending
+        pending_payout.amount = pending_payout
             .amount
             .checked_add(deferred_payout)
             .ok_or(ApexError::MathOverflow)?;

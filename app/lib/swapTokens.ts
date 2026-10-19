@@ -50,7 +50,28 @@ export const swapTokens: SwapToken[] = [
   },
 ];
 
-export function getSwapTokens() {
+export function getSwapTokens(network: "devnet" | "mainnet-beta" = "mainnet-beta") {
+  if (network === "devnet") {
+    const devnetTokens: SwapToken[] = [
+      {
+        symbol: "SOL",
+        name: "Solana (Devnet)",
+        mint: "So11111111111111111111111111111111111111112",
+        decimals: 9,
+      },
+    ];
+    const collateralMint = process.env.NEXT_PUBLIC_APEX_DEVNET_BASE_MINT;
+    if (collateralMint && collateralMint !== devnetTokens[0].mint) {
+      devnetTokens.push({
+        symbol: "tUSDC",
+        name: "ApeX Devnet Collateral",
+        mint: collateralMint,
+        decimals: 6,
+      });
+    }
+    return devnetTokens;
+  }
+
   return swapTokens.filter((token) => token.mint.length > 0);
 }
 

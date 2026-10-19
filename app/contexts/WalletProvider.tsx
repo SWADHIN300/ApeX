@@ -10,7 +10,7 @@ import {
   PhantomWalletAdapter,
   SolflareWalletAdapter,
 } from "@solana/wallet-adapter-wallets";
-import { getSolanaRpcEndpoint } from "@/lib/solanaRpc";
+import { fetchWithRateLimitRetry, getSolanaRpcEndpoint } from "@/lib/solanaRpc";
 
 import "@solana/wallet-adapter-react-ui/styles.css";
 
@@ -63,7 +63,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <NetworkContext.Provider value={{ network, setNetwork }}>
-      <ConnectionProvider endpoint={endpoint}>
+      <ConnectionProvider
+        endpoint={endpoint}
+        config={{ fetch: fetchWithRateLimitRetry, disableRetryOnRateLimit: true }}
+      >
         <SolanaWalletProvider wallets={wallets} autoConnect onError={handleError}>
           <WalletModalProvider>{children}</WalletModalProvider>
         </SolanaWalletProvider>

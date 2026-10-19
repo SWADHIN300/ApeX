@@ -44,7 +44,7 @@ const FEE_DENOMINATOR = 10_000n;
 const MAX_CONFIDENCE_BPS = 100n;
 const ORACLE_STALENESS = 60;
 const MAX_ABS_PYTH_EXPONENT = 12;
-const MAX_ORDERS = 500;
+const MAX_ORDERS = 64;
 
 // ── Account layout ──────────────────────────────────────────────────────────
 const MARKET_ACCOUNT_SIZE = 8 + 193;

@@ -3,12 +3,7 @@ import { getPool, ensureSchema, isDatabaseConfigured } from "@/lib/server/db";
 import { resolutionToTimeframe } from "@/lib/udf";
 
 /**
- * UDF `/history` — OHLCV bars for TradingView's Advanced Charts.
- *
- * Responds with the column-oriented shape the Universal Data Feed expects:
- *   { s: "ok", t: [...], o: [...], h: [...], l: [...], c: [...], v: [...] }
- * and `{ s: "no_data" }` when a range holds no bars, which is how the library
- * knows to stop paging backwards.
+ * UDF `/history` - bounded OHLCV history for TradingView's Advanced Charts.
  */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -16,8 +11,11 @@ export async function GET(request: Request) {
   const resolution = searchParams.get("resolution") || "15";
   const from = Number.parseInt(searchParams.get("from") || "0", 10);
   const to = Number.parseInt(searchParams.get("to") || "0", 10);
-
-  const symbol = rawSymbol.includes(":") ? rawSymbol.split(":")[1] : rawSymbol;
+  const countBackParam = Number.parseInt(searchParams.get("countBack") || "2000", 10);
+  const countBack = Number.isFinite(countBackParam)
+    ? Math.min(Math.max(countBackParam, 1), 5000)
+    : 2000;
+  const symbol = rawSymbol.includes(":") ? rawSymbol.split(":").pop() || "" : rawSymbol;
 
   if (!symbol) {
     return NextResponse.json({ s: "error", errmsg: "symbol is required" }, { status: 400 });
@@ -25,11 +23,14 @@ export async function GET(request: Request) {
 
   const timeframe = resolutionToTimeframe(resolution);
   if (!timeframe) {
-    return NextResponse.json({ s: "error", errmsg: `unsupported resolution ${resolution}` });
+    return NextResponse.json(
+      { s: "error", errmsg: `unsupported resolution ${resolution}` },
+      { status: 400 },
+    );
   }
 
-  if (!Number.isFinite(from) || !Number.isFinite(to) || to <= 0) {
-    return NextResponse.json({ s: "error", errmsg: "from/to are required" }, { status: 400 });
+  if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to <= 0 || from > to) {
+    return NextResponse.json({ s: "error", errmsg: "valid from/to seconds are required" }, { status: 400 });
   }
 
   if (!isDatabaseConfigured()) {
@@ -38,31 +39,32 @@ export async function GET(request: Request) {
 
   try {
     await ensureSchema();
-    const pool = getPool();
-
-    const result = await pool.query(
+    const result = await getPool().query(
       `
         SELECT
           EXTRACT(EPOCH FROM bucket_start)::bigint AS time,
-          open::float  AS open,
-          high::float  AS high,
-          low::float   AS low,
+          open::float AS open,
+          high::float AS high,
+          low::float AS low,
           close::float AS close,
           volume::float AS volume
-        FROM candles
-        WHERE pair = $1
-          AND timeframe = $2
-          AND bucket_start >= to_timestamp($3)
-          AND bucket_start <= to_timestamp($4)
+        FROM (
+          SELECT bucket_start, open, high, low, close, volume
+          FROM candles
+          WHERE pair = $1
+            AND timeframe = $2
+            AND bucket_start >= to_timestamp($3)
+            AND bucket_start <= to_timestamp($4)
+          ORDER BY bucket_start DESC
+          LIMIT $5
+        ) recent
         ORDER BY bucket_start ASC
       `,
-      [symbol, timeframe, Math.max(from, 0), to],
+      [symbol, timeframe, from, to, countBack],
     );
 
     if (result.rows.length === 0) {
-      // Report the oldest bar we do have so the library can jump straight there
-      // instead of paging through empty ranges.
-      const earliest = await pool.query(
+      const earliest = await getPool().query(
         `SELECT EXTRACT(EPOCH FROM MIN(bucket_start))::bigint AS t
          FROM candles WHERE pair = $1 AND timeframe = $2`,
         [symbol, timeframe],
@@ -75,15 +77,15 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       s: "ok",
-      t: result.rows.map((r) => Number(r.time)),
-      o: result.rows.map((r) => r.open),
-      h: result.rows.map((r) => r.high),
-      l: result.rows.map((r) => r.low),
-      c: result.rows.map((r) => r.close),
-      v: result.rows.map((r) => r.volume),
+      t: result.rows.map((row) => Number(row.time)),
+      o: result.rows.map((row) => row.open),
+      h: result.rows.map((row) => row.high),
+      l: result.rows.map((row) => row.low),
+      c: result.rows.map((row) => row.close),
+      v: result.rows.map((row) => row.volume),
     });
-  } catch (err) {
-    console.error("UDF history query failed:", err);
-    return NextResponse.json({ s: "error", errmsg: (err as Error).message }, { status: 500 });
+  } catch (error) {
+    console.error("UDF history query failed:", error);
+    return NextResponse.json({ s: "error", errmsg: "Unable to fetch candle history." }, { status: 500 });
   }
 }

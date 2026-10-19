@@ -53,10 +53,11 @@ export default function TopBar({
   onToggleSideNav?: () => void;
 }) {
   const { market, setMarket, markets } = useMarket();
-  const [price, setPrice] = useState(market?.price || 0);
+  const price = market?.price ?? 0;
   const [flashClass, setFlashClass] = useState("");
   const [priceDir, setPriceDir] = useState<"up" | "down" | null>(null);
   const prevRef = useRef(market?.price || 0);
+  const symbolRef = useRef(market?.symbol);
   const [flashKey, setFlashKey] = useState(0);
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -88,26 +89,28 @@ export default function TopBar({
 
   useEffect(() => {
     if (!market) return;
-    setPrice(market.price);
+
+    if (symbolRef.current !== market.symbol) {
+      symbolRef.current = market.symbol;
+      prevRef.current = market.price;
+      return;
+    }
+
+    const previous = prevRef.current;
     prevRef.current = market.price;
+    if (previous <= 0 || market.price === previous) return;
+
+    const direction = market.price > previous ? "up" : "down";
+    setFlashKey((key) => key + 1);
+    setPriceDir(direction);
+    setFlashClass(direction === "up" ? "flash-up" : "flash-down");
+    const timeout = setTimeout(() => {
+      setFlashClass("");
+      setPriceDir(null);
+    }, 500);
+
+    return () => clearTimeout(timeout);
   }, [market?.symbol, market?.price]);
-
-  useEffect(() => {
-    if (!market) return;
-    const id = setInterval(() => {
-      const delta = (Math.random() - 0.5) * (market.price * 0.001);
-      const next = +(prevRef.current + delta).toFixed(2);
-      prevRef.current = next;
-      setPrice(next);
-      setFlashKey((k) => k + 1);
-      const dir = delta >= 0 ? "up" : "down";
-      setPriceDir(dir);
-      setFlashClass(dir === "up" ? "flash-up" : "flash-down");
-      setTimeout(() => { setFlashClass(""); setPriceDir(null); }, 500);
-    }, 2500);
-    return () => clearInterval(id);
-  }, [market?.price]);
-
   const fmt = (n: number) =>
     n.toLocaleString("en-US", { minimumFractionDigits: 2 });
 

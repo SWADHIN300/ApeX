@@ -97,27 +97,20 @@ pub fn handler(ctx: Context<MatchOrders>) -> Result<()> {
     let fill_price = u64::try_from(fill_price).map_err(|_| ApexError::MathOverflow)?;
     require!(fill_price > 0, ApexError::MathOverflow);
 
-    // Defense-in-depth: if the supplied oracle carries valid, fresh Pyth data,
-    // bound the execution price to it. This stops two colluding accounts from
-    // crossing at an arbitrary mid that manufactures a favoured entry. A stale
-    // or missing oracle is tolerated (matching is not blocked) — the guard is
-    // only active when the price is trustworthy.
-    if let Ok(mark) = get_oracle_price(&ctx.accounts.oracle, &Clock::get()?) {
-        let band = (mark as u128)
-            .checked_mul(MAX_MATCH_PRICE_DEVIATION_BPS as u128)
-            .and_then(|v| v.checked_div(FEE_DENOMINATOR as u128))
-            .ok_or(ApexError::MathOverflow)?
-            as u64;
-        let hi = mark
-            .checked_add(band)
-            .ok_or(ApexError::MathOverflow)?;
-        let lo = mark.saturating_sub(band);
-        require!(
-            fill_price >= lo && fill_price <= hi,
-            ApexError::SlippageExceeded
-        );
-    }
-
+    // A match opens new positions, so never execute at an untrusted price.
+    // A missing or stale oracle must stop matching rather than disable the
+    // execution-price bound.
+    let mark = get_oracle_price(&ctx.accounts.oracle, &Clock::get()?)?;
+    let band = (mark as u128)
+        .checked_mul(MAX_MATCH_PRICE_DEVIATION_BPS as u128)
+        .and_then(|v| v.checked_div(FEE_DENOMINATOR as u128))
+        .ok_or(ApexError::MathOverflow)? as u64;
+    let hi = mark.checked_add(band).ok_or(ApexError::MathOverflow)?;
+    let lo = mark.saturating_sub(band);
+    require!(
+        fill_price >= lo && fill_price <= hi,
+        ApexError::SlippageExceeded
+    );
     let bid_collateral_used = proportional_collateral(bid.locked_collateral, fill_size, bid.size)?;
     let ask_collateral_used = proportional_collateral(ask.locked_collateral, fill_size, ask.size)?;
     require!(
@@ -142,6 +135,20 @@ pub fn handler(ctx: Context<MatchOrders>) -> Result<()> {
         .checked_sub(ask_collateral_used)
         .ok_or(ApexError::MathOverflow)?;
 
+    // Filled collateral moves from the margin account into the position. It
+    // must stop counting as withdrawable margin once the order is consumed.
+    ctx.accounts.bid_margin.deposited_collateral = ctx
+        .accounts
+        .bid_margin
+        .deposited_collateral
+        .checked_sub(bid_collateral_used)
+        .ok_or(ApexError::MathOverflow)?;
+    ctx.accounts.ask_margin.deposited_collateral = ctx
+        .accounts
+        .ask_margin
+        .deposited_collateral
+        .checked_sub(ask_collateral_used)
+        .ok_or(ApexError::MathOverflow)?;
     let bid_notional = calc_notional(bid_collateral_used, bid.leverage)?;
     let ask_notional = calc_notional(ask_collateral_used, ask.leverage)?;
 

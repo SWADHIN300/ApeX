@@ -50,24 +50,29 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
       }
 
       // 2. Fetch fresh data in the background
-      const data = await fetchAllTickers();
-      if (!mounted) return;
-      if (data && data.length > 0) {
-        setMarkets(data);
-        // Only update active market if it's still the fallback
-        setMarket((prev) => {
-          if (prev.symbol === "BTC-PERP") {
-            return data.find((m) => m.symbol === "BTC-PERP") || data[0];
+      try {
+        const data = await fetchAllTickers();
+        if (!mounted) return;
+        if (data && data.length > 0) {
+          setMarkets(data);
+          setMarket((prev) => {
+            if (prev.symbol === "BTC-PERP") {
+              return data.find((m) => m.symbol === "BTC-PERP") || data[0];
+            }
+            return prev;
+          });
+
+          try {
+            localStorage.setItem("apex_tickers_cache", JSON.stringify(data.slice(0, 300)));
+          } catch {
+            // Storage can be unavailable in private browsing or when quota is full.
           }
-          return prev;
-        });
-        
-        // Save to cache for next time (limit array to save quota, first 300 is enough)
-        try {
-          localStorage.setItem("apex_tickers_cache", JSON.stringify(data.slice(0, 300)));
-        } catch (e) {}
+        }
+      } catch (error) {
+        console.error("Failed to load market tickers:", error);
+      } finally {
+        if (mounted) setIsLoading(false);
       }
-      setIsLoading(false);
     };
     init();
     return () => {

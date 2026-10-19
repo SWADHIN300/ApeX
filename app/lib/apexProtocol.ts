@@ -49,6 +49,7 @@ const DEPOSIT_MARGIN_DISCRIMINATOR = Buffer.from([
 const WITHDRAW_MARGIN_DISCRIMINATOR = Buffer.from([
   124, 222, 8, 141, 181, 108, 15, 176,
 ]);
+const CLOSE_POSITION_DISCRIMINATOR = Buffer.from([123, 134, 81, 0, 49, 68, 98, 98]);
 const CLAIM_PENDING_PAYOUT_DISCRIMINATOR = Buffer.from([
   193, 0, 88, 10, 7, 129, 141, 108,
 ]);
@@ -629,6 +630,64 @@ export async function withdrawProtocolMargin({
   await connection.confirmTransaction(signature, "confirmed");
   return signature;
 }
+export async function closeProtocolPosition({
+  connection,
+  publicKey,
+  sendTransaction,
+  pair,
+}: {
+  connection: Connection;
+  publicKey: PublicKey;
+  sendTransaction: SendTransaction;
+  pair: string;
+}) {
+  const { programId, baseMint, market } = getMarketPdas(pair);
+  const marketAccount = await connection.getAccountInfo(market);
+  if (!marketAccount) throw new Error("This market has not been initialized yet.");
+
+  const position = PublicKey.findProgramAddressSync(
+    [Buffer.from("position"), market.toBuffer(), publicKey.toBuffer()],
+    programId,
+  )[0];
+  if (!(await connection.getAccountInfo(position))) {
+    throw new Error("This position is no longer open.");
+  }
+
+  const traderTokenAccount = await getAssociatedTokenAddress(baseMint, publicKey);
+  if (!(await connection.getAccountInfo(traderTokenAccount))) {
+    throw new Error("Your wallet does not have a collateral token account for this market.");
+  }
+
+  const marketData = marketAccount.data as Buffer;
+  const oracle = new PublicKey(marketData.subarray(40, 72));
+  const vault = readMarketVault(marketData);
+  const pendingPayout = getPendingPayoutPda(market, publicKey);
+  const data = Buffer.alloc(16);
+  CLOSE_POSITION_DISCRIMINATOR.copy(data, 0);
+  writeU64LE(data, BigInt(0), 8);
+
+  const transaction = new Transaction().add(
+    new TransactionInstruction({
+      programId,
+      keys: [
+        { pubkey: publicKey, isSigner: true, isWritable: true },
+        { pubkey: market, isSigner: false, isWritable: true },
+        { pubkey: position, isSigner: false, isWritable: true },
+        { pubkey: pendingPayout, isSigner: false, isWritable: true },
+        { pubkey: vault, isSigner: false, isWritable: true },
+        { pubkey: traderTokenAccount, isSigner: false, isWritable: true },
+        { pubkey: oracle, isSigner: false, isWritable: false },
+        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      ],
+      data,
+    }),
+  );
+
+  const signature = await sendTransaction(transaction, connection, { skipPreflight: false });
+  await connection.confirmTransaction(signature, "confirmed");
+  return signature;
+}
 export function getPendingPayoutPda(market: PublicKey, owner: PublicKey) {
   const programId = getApexProtocolProgramId();
   const [pendingPayout] = PublicKey.findProgramAddressSync(
@@ -783,6 +842,3 @@ export async function placeProtocolOrder({
 
   return signature;
 }
-
-
-

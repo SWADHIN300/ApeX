@@ -22,8 +22,8 @@ pub const MAX_FUNDING_RATE_BPS: i64 = 100;
 /// Maximum allowed deviation between a `match_orders` fill price and the
 /// on-chain oracle mark price, in bps. Prevents two colluding orders being
 /// crossed at an arbitrary price that manufactures a favourable entry (and
-/// moves the book's implied last price) at zero net risk. Only enforced when
-/// the oracle account actually carries valid, fresh Pyth data.
+/// moves the book's implied last price) at zero net risk. Matching fails when
+/// the oracle account does not carry valid, fresh Pyth data.
 pub const MAX_MATCH_PRICE_DEVIATION_BPS: u64 = 500;
 
 /// Upper bound on how many `Position` accounts a single `update_funding_rate`

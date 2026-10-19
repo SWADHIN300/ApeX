@@ -10,6 +10,7 @@ import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useMarket } from "@/contexts/MarketContext";
 import {
   fetchProtocolMarginAccount,
+  closeProtocolPosition,
   subscribeProtocolMarginAccount,
 } from "@/lib/apexProtocol";
 import {
@@ -40,7 +41,7 @@ type TradeContextType = {
     leverage: number,
     price: number,
   ) => void;
-  closePosition: (id: string, currentPrice: number) => void;
+  closePosition: (id: string, currentPrice: number) => Promise<void>;
   updatePositionsWithMarkPrice: (pair: string, markPrice: number) => void;
   refreshLedgerBalance: () => Promise<void>;
   refreshPositions: () => Promise<void>;
@@ -50,7 +51,7 @@ const TradeContext = createContext<TradeContextType | undefined>(undefined);
 
 export function TradeProvider({ children }: { children: React.ReactNode }) {
   const { connection } = useConnection();
-  const { publicKey } = useWallet();
+  const { publicKey, sendTransaction } = useWallet();
   const { market } = useMarket();
   const [onChainPosition, setOnChainPosition] = useState<Position | null>(null);
   const [localPositions, setLocalPositions] = useState<Position[]>([]);
@@ -182,18 +183,28 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
     void refreshPositions();
   };
 
-  const closePosition = (id: string, currentPrice: number) => {
+  const closePosition = async (id: string, currentPrice: number) => {
     const pos = positions.find((p) => p.id === id);
     if (!pos) return;
 
+    if (id.startsWith("onchain-")) {
+      if (!publicKey) throw new Error("Connect your wallet to close this position.");
+      await closeProtocolPosition({
+        connection,
+        publicKey,
+        sendTransaction,
+        pair: pos.pair,
+      });
+      await Promise.all([refreshLedgerBalance(), refreshPositions()]);
+      return;
+    }
+
     const sizeUsdc = pos.size * pos.entryPrice;
     const fee = sizeUsdc * 0.0004;
-    const diff =
-      pos.side === "Long"
-        ? currentPrice - pos.entryPrice
-        : pos.entryPrice - currentPrice;
+    const diff = pos.side === "Long"
+      ? currentPrice - pos.entryPrice
+      : pos.entryPrice - currentPrice;
     const finalPnl = diff * pos.size;
-
     const newTrade: TradeRecord = {
       id: pos.id,
       time: Math.floor(Date.now() / 1000),
@@ -208,11 +219,7 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
 
     setTrades((prev) => [newTrade, ...prev]);
     setLocalPositions((prev) => prev.filter((p) => p.id !== id));
-    if (onChainPosition && onChainPosition.id === id) {
-      setOnChainPosition(null);
-    }
   };
-
   const updatePositionsWithMarkPrice = useCallback(
     (pair: string, markPrice: number) => {
       // Update on-chain position mark price & PnL
