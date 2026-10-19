@@ -13,7 +13,9 @@ export async function GET(request: Request) {
   const rawSlippageBps = searchParams.get("slippageBps") ?? "50";
   const slippageBps = Number(rawSlippageBps);
 
-  const amountValue = amount && /^\d{1,20}$/.test(amount) ? BigInt(amount) : 0n;
+  const validAmount = !!amount && /^\d{1,20}$/.test(amount) &&
+    !/^0+$/.test(amount) &&
+    (amount.length < 20 || amount <= "18446744073709551615");
   let validMints = false;
   try {
     validMints = !!inputMint && !!outputMint && new PublicKey(inputMint).toBase58() === inputMint &&
@@ -22,7 +24,7 @@ export async function GET(request: Request) {
     validMints = false;
   }
 
-  if ((network !== "devnet" && network !== "mainnet-beta") || !validMints || !amount || amountValue <= 0n || amountValue > 18_446_744_073_709_551_615n ||
+  if ((network !== "devnet" && network !== "mainnet-beta") || !validMints || !validAmount ||
       !/^\d+$/.test(rawSlippageBps) || !Number.isSafeInteger(slippageBps) || slippageBps < 1 || slippageBps > 5000) {
     return NextResponse.json(
       { error: "Invalid swap quote parameters." },
