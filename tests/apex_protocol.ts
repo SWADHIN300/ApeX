@@ -17,7 +17,16 @@ import {
 import { expect } from "chai";
 
 describe("apex_protocol comprehensive test suite", () => {
-  const provider = anchor.AnchorProvider.env();
+  const testFeePayer = Keypair.generate();
+  const endpoint = process.env.ANCHOR_PROVIDER_URL ?? "http://127.0.0.1:8899";
+  if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(endpoint)) {
+    throw new Error("Integration tests must use a local validator endpoint");
+  }
+  const provider = new anchor.AnchorProvider(
+    new anchor.web3.Connection(endpoint, "confirmed"),
+    new anchor.Wallet(testFeePayer),
+    { commitment: "confirmed", preflightCommitment: "confirmed" }
+  );
   anchor.setProvider(provider);
 
   // We load the ApexProtocol IDL/Program
@@ -46,45 +55,25 @@ describe("apex_protocol comprehensive test suite", () => {
   const PRICE_DECIMALS = 1_000_000;
   const SIZE_DECIMALS = 1_000_000;
   const FEE_RATE_BPS = 4; // 0.04%
+  const MOCK_ORACLE_PROGRAM_ID = new PublicKey(
+    "9razPkzDEWnpCq1MbPD5E8xbPVkhfSeMpybAsVmucSgN"
+  );
 
-  /**
-   * Helper to write a mock Pyth price account data buffer
-   */
-  function createMockPythAccountData(
-    price: number,
-    confidence: number = 10,
-    expo: number = -6,
-    timestampDelta: number = 0
-  ): Buffer {
-    const data = Buffer.alloc(240);
-    // Magic 0xa1b2c3d4
-    data.writeUInt32LE(0xa1b2c3d4, 0);
-    // Version 2
-    data.writeUInt32LE(2, 4);
-    // Account type 3 (price account)
-    data.writeUInt32LE(3, 8);
-    // Exponent at offset 20
-    data.writeInt32LE(expo, 20);
-
-    const now = Math.floor(Date.now() / 1000) + timestampDelta;
-    // timestamp at offset 96
-    data.writeBigInt64LE(BigInt(now), 96);
-
-    // Prev price at 184
-    data.writeBigInt64LE(BigInt(price), 184);
-    // Prev conf at 192
-    data.writeBigUInt64LE(BigInt(confidence), 192);
-    // Prev timestamp at 200
-    data.writeBigInt64LE(BigInt(now), 200);
-
-    // Aggregate price at offset 208
-    data.writeBigInt64LE(BigInt(price), 208);
-    // Aggregate conf at offset 216
-    data.writeBigUInt64LE(BigInt(confidence), 216);
-    // Aggregate status at offset 224: 1 = TRADING
-    data.writeUInt8(1, 224);
-
-    return data;
+  async function refreshMockOracle(): Promise<void> {
+    const updateData = Buffer.alloc(9);
+    updateData[0] = 1;
+    updateData.writeBigUInt64LE(BigInt(65_000 * PRICE_DECIMALS), 1);
+    const signature = await provider.connection.sendTransaction(
+      new anchor.web3.Transaction().add(
+        new anchor.web3.TransactionInstruction({
+          programId: MOCK_ORACLE_PROGRAM_ID,
+          keys: [{ pubkey: mockOracleKeypair.publicKey, isSigner: false, isWritable: true }],
+          data: updateData,
+        })
+      ),
+      [authority]
+    );
+    await provider.connection.confirmTransaction(signature, "confirmed");
   }
 
   before(async () => {
@@ -96,7 +85,7 @@ describe("apex_protocol comprehensive test suite", () => {
     mockOracleKeypair = Keypair.generate();
 
     // Airdrop SOL to test actors
-    for (const actor of [authority, traderA, traderB, keeper]) {
+    for (const actor of [testFeePayer, authority, traderA, traderB, keeper]) {
       const sig = await provider.connection.requestAirdrop(
         actor.publicKey,
         10 * anchor.web3.LAMPORTS_PER_SOL
@@ -104,10 +93,7 @@ describe("apex_protocol comprehensive test suite", () => {
       await provider.connection.confirmTransaction(sig, "confirmed");
     }
 
-    // Create the on-chain oracle account so match_orders/liquidate can pass it.
-    // It is System-owned with the Pyth header left unpopulated (zeros), which the
-    // program treats as "no trustworthy price in this call" — matching proceeds
-    // thanks to the lenient spread guard.
+    // Create a valid local Pyth-layout oracle feed for the strict oracle checks.
     const oracleRent = await provider.connection.getMinimumBalanceForRentExemption(240);
     const oracleSig = await provider.connection.sendTransaction(
       new anchor.web3.Transaction().add(
@@ -116,12 +102,28 @@ describe("apex_protocol comprehensive test suite", () => {
           newAccountPubkey: mockOracleKeypair.publicKey,
           lamports: oracleRent,
           space: 240,
-          programId: anchor.web3.SystemProgram.programId,
+          programId: MOCK_ORACLE_PROGRAM_ID,
         })
       ),
       [authority, mockOracleKeypair]
     );
     await provider.connection.confirmTransaction(oracleSig, "confirmed");
+
+    const initOracleData = Buffer.alloc(13);
+    initOracleData[0] = 0;
+    initOracleData.writeBigUInt64LE(BigInt(65_000 * PRICE_DECIMALS), 1);
+    initOracleData.writeInt32LE(-6, 9);
+    const initOracleSig = await provider.connection.sendTransaction(
+      new anchor.web3.Transaction().add(
+        new anchor.web3.TransactionInstruction({
+          programId: MOCK_ORACLE_PROGRAM_ID,
+          keys: [{ pubkey: mockOracleKeypair.publicKey, isSigner: false, isWritable: true }],
+          data: initOracleData,
+        })
+      ),
+      [authority]
+    );
+    await provider.connection.confirmTransaction(initOracleSig, "confirmed");
 
     // Create Base Mint (collateral token e.g. USDC, 6 decimals)
     baseMint = await createMint(
@@ -457,6 +459,7 @@ describe("apex_protocol comprehensive test suite", () => {
 
   describe("4. Order Matching & Position Creation", () => {
     it("keeper matches crossing bid and ask, creating on-chain Position PDAs", async () => {
+      await refreshMockOracle();
       await program.methods
         .matchOrders()
         .accounts({
@@ -574,10 +577,13 @@ describe("apex_protocol comprehensive test suite", () => {
       await program.methods
         .cancelOrder(new anchor.BN(0), { long: {} })
         .accounts({
-          trader: traderA.publicKey,
+          signer: traderA.publicKey,
           market: marketPda,
           orderBook: orderBookPda,
           marginAccount: traderAMarginPda,
+          vault: vaultKeypair.publicKey,
+          traderTokenAccount: traderATokenAccount,
+          tokenProgram: TOKEN_PROGRAM_ID,
         })
         .signers([traderA])
         .rpc();

@@ -42,7 +42,7 @@ interface Props {
 export default function AdvancedIndicators({ config, onChange }: Props) {
   const [expandedSection, setExpandedSection] = useState<string | null>('moving-averages');
 
-  const toggle = (key: keyof AdvancedIndicatorConfig, value?: any) => {
+  const toggle = (key: keyof AdvancedIndicatorConfig, value?: boolean | number) => {
     onChange({
       ...config,
       [key]: value !== undefined ? value : !config[key]
@@ -133,7 +133,7 @@ export default function AdvancedIndicators({ config, onChange }: Props) {
             const newConfig = { ...config };
             Object.keys(newConfig).forEach(k => {
               if (typeof newConfig[k as keyof AdvancedIndicatorConfig] === 'boolean') {
-                (newConfig as any)[k] = allOff;
+                (newConfig as unknown as Record<string, unknown>)[k] = allOff;
               }
             });
             onChange(newConfig);

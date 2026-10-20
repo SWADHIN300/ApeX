@@ -9,6 +9,14 @@ import type { Time } from "lightweight-charts";
 import { X, Search, TrendingUp, TrendingDown, Star, Coins } from "lucide-react";
 import type { Ticker } from "@/lib/types";
 import CoinIcon from "./CoinIcon";
+import { useLocalStorageState } from "@/hooks/useLocalStorageState";
+
+function parseFavorites(serialized: string): string[] {
+  const value: unknown = JSON.parse(serialized);
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string")
+    ? value
+    : [];
+}
 
 // ── Mini sparkline chart ──────────────────────────────────────────────────────
 function MiniChart({ symbol, isUp }: { symbol: string; isUp: boolean }) {
@@ -71,7 +79,7 @@ function MiniChart({ symbol, isUp }: { symbol: string; isUp: boolean }) {
       mounted = false;
       chart.remove();
     };
-  }, [symbol, isUp]);
+  }, [symbol, isUp, visible]);
 
   return (
     <div ref={containerRef} style={{ width: 80, height: 36, opacity: loaded ? 1 : 0.3, transition: "opacity 0.3s" }} />
@@ -147,7 +155,11 @@ export default function MarketSearchModal({ onClose }: { onClose: () => void }) 
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [favorites, setFavorites] = useState<string[]>([]);
+  const [favorites, setFavorites] = useLocalStorageState<string[]>(
+    "apex-favorites",
+    [],
+    parseFavorites
+  );
   const [tab, setTab] = useState<"all" | "favorites" | "gainers" | "losers">("all");
   const inputRef = useRef<HTMLInputElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -155,9 +167,6 @@ export default function MarketSearchModal({ onClose }: { onClose: () => void }) 
   // Focus input on open
   useEffect(() => {
     inputRef.current?.focus();
-    const saved = localStorage.getItem("apex-favorites");
-    if (saved) setFavorites(JSON.parse(saved));
-    
     // Prevent scrolling behind modal
     document.body.style.overflow = "hidden";
     return () => {
@@ -198,10 +207,9 @@ export default function MarketSearchModal({ onClose }: { onClose: () => void }) 
   const toggleFav = useCallback((sym: string) => {
     setFavorites((prev) => {
       const next = prev.includes(sym) ? prev.filter((s) => s !== sym) : [...prev, sym];
-      localStorage.setItem("apex-favorites", JSON.stringify(next));
       return next;
     });
-  }, []);
+  }, [setFavorites]);
 
   const handleSelect = useCallback((m: Ticker) => {
     setMarket(m);
@@ -301,7 +309,7 @@ export default function MarketSearchModal({ onClose }: { onClose: () => void }) 
           {filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-text-muted">
               <Search size={32} className="mb-3 opacity-40" />
-              <p className="t-body-sm">No markets found for "{query}"</p>
+              <p className="t-body-sm">No markets found for &quot;{query}&quot;</p>
             </div>
           ) : (
             filtered.slice(0, 100).map((m) => (

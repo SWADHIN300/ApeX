@@ -33,19 +33,25 @@ export default function OrderBook({ onSelectPrice }: OrderBookProps = {}) {
   /* Compute cumulative totals + max for depth % */
   // Asks sorted ascending by price: asks[0] is lowest ask (closest to spread).
   const sortedAsks = [...asks].sort((a, b) => a.price - b.price).slice(0, 15);
-  let askAcc = 0;
-  const askRows = sortedAsks.map((a) => {
-    askAcc += a.size * a.price;
-    return { ...a, total: askAcc };
-  });
+  const askRows = sortedAsks.reduce<Array<(typeof sortedAsks)[number] & { total: number }>>(
+    (rows, ask) => {
+      const total = (rows.at(-1)?.total ?? 0) + ask.size * ask.price;
+      rows.push({ ...ask, total });
+      return rows;
+    },
+    []
+  );
 
   // Bids sorted descending by price: bids[0] is highest bid (closest to spread).
   const sortedBids = [...bids].sort((a, b) => b.price - a.price).slice(0, 15);
-  let bidAcc = 0;
-  const bidRows = sortedBids.map((b) => {
-    bidAcc += b.size * b.price;
-    return { ...b, total: bidAcc };
-  });
+  const bidRows = sortedBids.reduce<Array<(typeof sortedBids)[number] & { total: number }>>(
+    (rows, bid) => {
+      const total = (rows.at(-1)?.total ?? 0) + bid.size * bid.price;
+      rows.push({ ...bid, total });
+      return rows;
+    },
+    []
+  );
 
   const maxTotal = Math.max(
     askRows[askRows.length - 1]?.total || 0,

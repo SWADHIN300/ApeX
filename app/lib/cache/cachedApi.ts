@@ -2,16 +2,16 @@ import { exchangeManager, ExchangeName, Candle, Ticker, OrderBookData } from '..
 import { cache } from './indexedDB';
 
 export class CachedApi {
-  private requestQueue: Map<string, Promise<any>> = new Map();
+  private requestQueue: Map<string, Promise<unknown>> = new Map();
 
-  private getCacheKey(prefix: string, ...args: any[]): string {
+  private getCacheKey(prefix: string, ...args: (string | number)[]): string {
     return `${prefix}:${args.join(':')}`;
   }
 
   // Deduplicate concurrent requests
   private async dedupeRequest<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
     if (this.requestQueue.has(key)) {
-      return this.requestQueue.get(key);
+      return this.requestQueue.get(key) as Promise<T>;
     }
 
     const promise = fetcher().finally(() => {

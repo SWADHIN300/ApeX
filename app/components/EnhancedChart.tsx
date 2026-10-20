@@ -13,6 +13,7 @@ import {
   LineSeries,
   AreaSeries,
   HistogramSeries,
+  SeriesType,
 } from "lightweight-charts";
 import { cachedApi } from "@/lib/cache/cachedApi";
 import { useMarket } from "@/contexts/MarketContext";
@@ -21,13 +22,14 @@ import { AdvancedIndicatorConfig } from "./AdvancedIndicators";
 import * as indicators from "@/lib/indicators";
 import { detectAllPatterns, PatternDetection } from "@/lib/patterns/candlestickPatterns";
 import { Candle } from "@/lib/exchanges/types";
+import type { ExchangeName } from "@/lib/exchanges";
 
 interface Props {
   timeframe?: string;
   indicatorConfig?: AdvancedIndicatorConfig;
   drawingTool?: DrawingTool;
   chartType?: 'candlestick' | 'line' | 'area';
-  exchange?: string;
+  exchange?: ExchangeName;
 }
 
 export default function EnhancedChart({
@@ -40,11 +42,11 @@ export default function EnhancedChart({
   const { market } = useMarket();
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const mainSeriesRef = useRef<ISeriesApi<any> | null>(null);
-  const indicatorSeriesRef = useRef<Map<string, ISeriesApi<any>>>(new Map());
+  const mainSeriesRef = useRef<ISeriesApi<SeriesType> | null>(null);
+  const indicatorSeriesRef = useRef<Map<string, ISeriesApi<SeriesType>>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [patterns, setPatterns] = useState<PatternDetection[]>([]);
-  const candleDataRef = useRef<any[]>([]);
+  const candleDataRef = useRef<Candle[]>([]);
 
   // Calculate indicator helper
   const calculateSMA = useCallback((data: { time: Time; value: number }[], period: number) => {
@@ -62,6 +64,7 @@ export default function EnhancedChart({
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+    const indicatorSeries = indicatorSeriesRef.current;
 
     const chart = createChart(container, {
       width: container.clientWidth,
@@ -121,7 +124,7 @@ export default function EnhancedChart({
       chart.remove();
       chartRef.current = null;
       mainSeriesRef.current = null;
-      indicatorSeriesRef.current.clear();
+      indicatorSeries.clear();
     };
   }, []);
 
@@ -162,10 +165,13 @@ export default function EnhancedChart({
     if (candleDataRef.current.length > 0) {
       const data = candleDataRef.current;
       if (chartType === 'candlestick') {
-        mainSeriesRef.current?.setData(data);
+        mainSeriesRef.current?.setData(data.map((candle) => ({
+          ...candle,
+          time: candle.time as Time,
+        })));
       } else {
         // For line/area, use close prices
-        const closeData = data.map((k: any) => ({ time: k.time, value: k.close }));
+        const closeData = data.map((k) => ({ time: k.time as Time, value: k.close }));
         mainSeriesRef.current?.setData(closeData);
       }
     }
@@ -177,84 +183,6 @@ export default function EnhancedChart({
     const mode = drawingTool === "crosshair" ? CrosshairMode.Normal : CrosshairMode.Magnet;
     chartRef.current.applyOptions({ crosshair: { mode } });
   }, [drawingTool]);
-
-  // Load data and apply indicators
-  useEffect(() => {
-    if (!market || !chartRef.current || !mainSeriesRef.current) return;
-
-    let mounted = true;
-    let unsubscribeWs: (() => void) | undefined;
-
-    const loadData = async () => {
-      setIsLoading(true);
-
-      const klines = await cachedApi.fetchKlines(market.symbol, timeframe, 500, exchange as any);
-      if (!mounted || !mainSeriesRef.current) return;
-
-      const unique = Array.from(
-        new Map(klines.map((k) => [k.time, k])).values()
-      )
-        .sort((a, b) => a.time - b.time);
-
-      const uniqueWithTime = unique.map((k) => ({ ...k, time: k.time as Time }));
-      candleDataRef.current = uniqueWithTime;
-
-      if (unique.length > 0) {
-        // Set main series data
-        if (chartType === 'candlestick') {
-          mainSeriesRef.current.setData(uniqueWithTime);
-        } else {
-          // For line/area, use close prices
-          const closeData = uniqueWithTime.map(k => ({ time: k.time, value: k.close }));
-          mainSeriesRef.current.setData(closeData);
-        }
-
-        // Detect patterns
-        const detectedPatterns = detectAllPatterns(unique);
-        setPatterns(detectedPatterns);
-
-        // Apply indicators
-        applyIndicators(unique);
-
-        chartRef.current?.timeScale().fitContent();
-      }
-
-      setIsLoading(false);
-
-      // Real-time WebSocket updates
-      unsubscribeWs = cachedApi.subscribeKlines(market.symbol, timeframe, (candle) => {
-        if (!mounted || !mainSeriesRef.current) return;
-        
-        if (chartType === 'candlestick') {
-          mainSeriesRef.current.update({ ...candle, time: candle.time as Time });
-        } else {
-          mainSeriesRef.current.update({ time: candle.time as Time, value: candle.close });
-        }
-
-        // Update candle data
-        const lastIdx = candleDataRef.current.findIndex(c => c.time === candle.time);
-        if (lastIdx !== -1) {
-          candleDataRef.current[lastIdx] = candle;
-        } else {
-          candleDataRef.current.push(candle);
-        }
-      }, exchange as any);
-    };
-
-    loadData();
-
-    return () => {
-      mounted = false;
-      unsubscribeWs?.();
-    };
-  }, [market?.symbol, timeframe, chartType, exchange]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Apply indicators when config changes
-  useEffect(() => {
-    if (candleDataRef.current.length > 0 && indicatorConfig) {
-      applyIndicators(candleDataRef.current);
-    }
-  }, [indicatorConfig]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const applyIndicators = useCallback((candles: Candle[]) => {
     if (!chartRef.current || !indicatorConfig) return;
@@ -363,6 +291,89 @@ export default function EnhancedChart({
       seriesMap.set('volume', volumeSeries);
     }
   }, [calculateSMA, indicatorConfig]);
+
+  // Load data and apply indicators
+  useEffect(() => {
+    if (!market || !chartRef.current || !mainSeriesRef.current) return;
+
+    let mounted = true;
+    let unsubscribeWs: (() => void) | undefined;
+
+    const loadData = async () => {
+      setIsLoading(true);
+
+      const klines = await cachedApi.fetchKlines(market.symbol, timeframe, 500, exchange);
+      if (!mounted || !mainSeriesRef.current) return;
+
+      const unique = Array.from(
+        new Map(klines.map((k) => [k.time, k])).values()
+      )
+        .sort((a, b) => a.time - b.time);
+
+      const uniqueWithTime = unique;
+      candleDataRef.current = uniqueWithTime;
+
+      if (unique.length > 0) {
+        // Set main series data
+        if (chartType === 'candlestick') {
+          mainSeriesRef.current.setData(uniqueWithTime.map((candle) => ({
+            ...candle,
+            time: candle.time as Time,
+          })));
+        } else {
+          // For line/area, use close prices
+          const closeData = uniqueWithTime.map(k => ({ time: k.time as Time, value: k.close }));
+          mainSeriesRef.current.setData(closeData);
+        }
+
+        // Detect patterns
+        const detectedPatterns = detectAllPatterns(unique);
+        setPatterns(detectedPatterns);
+
+        // Apply indicators
+        applyIndicators(unique);
+
+        chartRef.current?.timeScale().fitContent();
+      }
+
+      setIsLoading(false);
+
+      // Real-time WebSocket updates
+      unsubscribeWs = cachedApi.subscribeKlines(market.symbol, timeframe, (candle) => {
+        if (!mounted || !mainSeriesRef.current) return;
+        
+        if (chartType === 'candlestick') {
+          mainSeriesRef.current.update({ ...candle, time: candle.time as Time });
+        } else {
+          mainSeriesRef.current.update({ time: candle.time as Time, value: candle.close });
+        }
+
+        // Update candle data
+        const lastIdx = candleDataRef.current.findIndex(c => c.time === candle.time);
+        if (lastIdx !== -1) {
+          candleDataRef.current[lastIdx] = candle;
+        } else {
+          candleDataRef.current.push(candle);
+        }
+      }, exchange);
+    };
+
+    loadData();
+
+    return () => {
+      mounted = false;
+      unsubscribeWs?.();
+    };
+  }, [market?.symbol, timeframe, chartType, exchange]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Apply indicators when config changes
+  useEffect(() => {
+    if (candleDataRef.current.length > 0 && indicatorConfig) {
+      applyIndicators(candleDataRef.current);
+    }
+  }, [indicatorConfig]); // eslint-disable-line react-hooks/exhaustive-deps
+
+
 
   return (
     <div ref={containerRef} style={{ width: "100%", height: "100%", position: "relative" }}>

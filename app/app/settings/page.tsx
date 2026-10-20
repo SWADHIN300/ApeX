@@ -1,10 +1,10 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { useLocalStorageState } from "@/hooks/useLocalStorageState";
 import AppShell from "@/components/layout/AppShell";
 import { useSettings } from "@/contexts/SettingsContext";
 import {
   Settings,
-  User,
   Shield,
   Bell,
   Zap,
@@ -12,7 +12,6 @@ import {
   Moon,
   Sun,
   CheckCircle2,
-  Circle,
   Key,
 } from "lucide-react";
 
@@ -39,11 +38,18 @@ function applyTheme(choice: ThemeChoice) {
   const resolved = choice === "system" ? getSystemTheme() : choice;
   document.documentElement.classList.remove("dark", "light");
   document.documentElement.classList.add(resolved);
-  localStorage.setItem("sol-dex-theme", choice);
 }
 
+const parseTheme = (value: string): ThemeChoice =>
+  value === "light" || value === "system" ? value : "dark";
+
 export default function SettingsPage() {
-  const [theme, setTheme] = useState<ThemeChoice>("dark");
+  const [theme, setTheme] = useLocalStorageState<ThemeChoice>(
+    "sol-dex-theme",
+    "dark",
+    parseTheme,
+    (value) => value
+  );
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
   const { settings, updateSettings } = useSettings();
   const [saved, setSaved] = useState(false);
@@ -91,16 +97,7 @@ export default function SettingsPage() {
     settings.currency === "USD" ? "US Dollar (USD, $)" : settings.currency,
   );
 
-  useEffect(() => {
-    const savedTheme = localStorage.getItem("sol-dex-theme");
-    const nextTheme: ThemeChoice =
-      savedTheme === "light" || savedTheme === "dark" || savedTheme === "system"
-        ? savedTheme
-        : "dark";
-
-    setTheme(nextTheme);
-    applyTheme(nextTheme);
-  }, []);
+  useEffect(() => applyTheme(theme), [theme]);
 
   useEffect(() => {
     if (theme !== "system") return;

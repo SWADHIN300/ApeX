@@ -32,6 +32,7 @@ type SendTransaction = (
  */
 const DISCRIMINATORS = {
   initializeSpotMarket: Buffer.from([234, 196, 128, 44, 94, 15, 48, 201]),
+  initializeSpotOrderbook: Buffer.from([41, 28, 163, 16, 206, 177, 103, 15]),
   depositSpot: Buffer.from([59, 165, 165, 50, 18, 23, 158, 185]),
   withdrawSpot: Buffer.from([228, 41, 126, 4, 112, 18, 221, 112]),
   placeSpotOrder: Buffer.from([45, 79, 81, 160, 248, 90, 91, 220]),
@@ -310,6 +311,7 @@ export async function initializeSpotMarket({
   DISCRIMINATORS.initializeSpotMarket.copy(data, 0);
   data.writeBigUInt64LE(BigInt(feeRateBps), 8);
 
+  const orderBookData = Buffer.from(DISCRIMINATORS.initializeSpotOrderbook);
   const transaction = new Transaction().add(
     new TransactionInstruction({
       programId,
@@ -320,12 +322,21 @@ export async function initializeSpotMarket({
         { pubkey: quoteMint, isSigner: false, isWritable: false },
         { pubkey: baseVault.publicKey, isSigner: true, isWritable: true },
         { pubkey: quoteVault.publicKey, isSigner: true, isWritable: true },
-        { pubkey: orderBook, isSigner: false, isWritable: true },
         { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
         { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
         { pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false },
       ],
       data,
+    }),
+    new TransactionInstruction({
+      programId,
+      keys: [
+        { pubkey: publicKey, isSigner: true, isWritable: true },
+        { pubkey: spotMarket, isSigner: false, isWritable: false },
+        { pubkey: orderBook, isSigner: false, isWritable: true },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      ],
+      data: orderBookData,
     }),
   );
 

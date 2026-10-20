@@ -13,18 +13,19 @@ import {
 
 export function useOracle() {
   const { market, isLoading } = useMarket();
+  const marketSymbol = market?.symbol;
   const { connection } = useConnection();
   const [oraclePrice, setOraclePrice] = useState<OraclePrice | null>(null);
   const [oracleAddress, setOracleAddress] = useState<PublicKey | null>(null);
 
   useEffect(() => {
-    if (!market || isLoading) return;
+    if (!marketSymbol || isLoading) return;
 
     let mounted = true;
 
     async function loadOracle() {
       try {
-        const { market: marketPda } = getMarketPdas(market.symbol);
+        const { market: marketPda } = getMarketPdas(marketSymbol);
         const marketAccount = await connection.getAccountInfo(marketPda);
 
         let oraclePubkey: PublicKey | null = null;
@@ -59,7 +60,7 @@ export function useOracle() {
     return () => {
       mounted = false;
     };
-  }, [connection, market?.symbol, isLoading]);
+  }, [connection, marketSymbol, isLoading]);
 
   // Real-time on-chain oracle subscription
   useEffect(() => {

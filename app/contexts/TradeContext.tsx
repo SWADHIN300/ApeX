@@ -60,6 +60,7 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
 
   // Combined positions: On-chain takes precedence for the active market pair
   const positions = React.useMemo(() => {
+    if (!publicKey || !market) return localPositions;
     if (onChainPosition) {
       // If there's an on-chain position for this market, filter out local positions for that pair
       const otherPairPositions = localPositions.filter(
@@ -68,7 +69,7 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
       return [onChainPosition, ...otherPairPositions];
     }
     return localPositions;
-  }, [onChainPosition, localPositions]);
+  }, [market, onChainPosition, localPositions, publicKey]);
 
   const applyMargin = useCallback(
     (margin: {
@@ -93,7 +94,6 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
 
   const refreshLedgerBalance = useCallback(async () => {
     if (!publicKey || !market) {
-      setPortfolio(defaultPortfolio);
       return;
     }
 
@@ -111,7 +111,6 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
 
   const refreshPositions = useCallback(async () => {
     if (!publicKey || !market) {
-      setOnChainPosition(null);
       return;
     }
 
@@ -134,9 +133,32 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
   }, [connection, market, publicKey]);
 
   useEffect(() => {
-    void refreshLedgerBalance();
-    void refreshPositions();
-  }, [refreshLedgerBalance, refreshPositions]);
+    if (!publicKey || !market) return;
+    let active = true;
+
+    fetchProtocolMarginAccount(connection, market.symbol, publicKey)
+      .then((margin) => {
+        if (active) applyMargin(margin);
+      })
+      .catch(() => {});
+
+    fetchOnChainPosition(connection, market.symbol, publicKey)
+      .then((decoded) => {
+        if (!active) return;
+        setOnChainPosition(
+          decoded
+            ? mapOnChainToFrontendPosition(decoded, market.symbol, market.price)
+            : null
+        );
+      })
+      .catch(() => {
+        if (active) setOnChainPosition(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [applyMargin, connection, market, publicKey]);
 
   // Subscribe to margin account changes
   useEffect(() => {
@@ -268,7 +290,7 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
       value={{
         positions,
         trades,
-        portfolio,
+        portfolio: publicKey ? portfolio : defaultPortfolio,
         isOnChainPosition: !!onChainPosition,
         placeOrder,
         closePosition,

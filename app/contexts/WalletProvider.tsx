@@ -1,16 +1,15 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useContext, useMemo } from "react";
 import {
   ConnectionProvider,
   WalletProvider as SolanaWalletProvider,
 } from "@solana/wallet-adapter-react";
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
-import {
-  PhantomWalletAdapter,
-  SolflareWalletAdapter,
-} from "@solana/wallet-adapter-wallets";
+import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
+import { SolflareWalletAdapter } from "@solana/wallet-adapter-solflare";
 import { fetchWithRateLimitRetry, getSolanaRpcEndpoint } from "@/lib/solanaRpc";
+import { useLocalStorageState } from "@/hooks/useLocalStorageState";
 
 import "@solana/wallet-adapter-react-ui/styles.css";
 
@@ -31,18 +30,15 @@ export function useNetwork() {
 }
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
-  const [network, setNetworkState] = useState<NetworkType>("devnet");
-
-  useEffect(() => {
-    const saved = localStorage.getItem("apex-network");
-    if (saved === "devnet" || saved === "mainnet-beta") {
-      setNetworkState(saved);
-    }
-  }, []);
+  const [network, setNetworkState] = useLocalStorageState<NetworkType>(
+    "apex-network",
+    "devnet",
+    (saved) => saved === "mainnet-beta" ? "mainnet-beta" : "devnet",
+    (value) => value
+  );
 
   const setNetwork = (n: NetworkType) => {
     setNetworkState(n);
-    localStorage.setItem("apex-network", n);
   };
 
   const endpoint = useMemo(() => getSolanaRpcEndpoint(network), [network]);

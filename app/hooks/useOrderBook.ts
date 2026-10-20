@@ -85,7 +85,7 @@ export function useOrderBook(preferOnChain: boolean = true) {
             try {
               cleanupFn = subscribeProtocolOrderBook(
                 connection,
-                market.symbol,
+                marketSymbol,
                 (update) => {
                   if (cancelled) return;
                   setBids(update.bids);

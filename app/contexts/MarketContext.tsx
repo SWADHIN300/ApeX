@@ -38,14 +38,12 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
           const parsed = JSON.parse(cached);
           if (parsed && parsed.length > 0) {
             setMarkets(parsed);
-            if (market.symbol === "BTC-PERP") {
-              const btc = parsed.find((m: Ticker) => m.symbol === "BTC-PERP") || parsed[0];
-              setMarket(btc);
-            }
+            const btc = parsed.find((m: Ticker) => m.symbol === "BTC-PERP") || parsed[0];
+            setMarket((previous) => previous.symbol === "BTC-PERP" ? btc : previous);
             setIsLoading(false);
           }
         }
-      } catch (e) {
+      } catch {
         // Ignore cache errors
       }
 
@@ -81,10 +79,11 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // WebSocket subscription for the active market
+  const marketSymbol = market?.symbol;
   useEffect(() => {
-    if (!market || isLoading) return;
+    if (!marketSymbol || isLoading) return;
 
-    const unsubscribe = subscribeTicker(market.symbol, (ticker) => {
+    const unsubscribe = subscribeTicker(marketSymbol, (ticker) => {
       setMarket((prev) => ({ ...prev, ...ticker }));
       setMarkets((prevList) =>
         prevList.map((m) => (m.symbol === ticker.symbol ? ticker : m))
@@ -92,7 +91,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => unsubscribe();
-  }, [market?.symbol, isLoading]);
+  }, [marketSymbol, isLoading]);
 
   return (
     <MarketContext.Provider value={{ market, setMarket, markets, isLoading }}>

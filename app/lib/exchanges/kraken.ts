@@ -2,6 +2,12 @@ import { ExchangeAdapter, Ticker, Candle, OrderBookData } from './types';
 
 const KRAKEN_REST_URL = "https://api.kraken.com/0/public";
 const KRAKEN_WS_URL = "wss://ws.kraken.com";
+type KrakenTickerPayload = { c: string[]; o: string; v: string[]; h: string[]; l: string[] };
+type KrakenWsTickerPayload = { c: string[]; o: string[]; v: string[]; h: string[]; l: string[] };
+type KrakenOhlc = [number | string, string, string, string, string, string, string, string, ...unknown[]];
+type KrakenLevel = [string, string, ...unknown[]];
+type KrakenBookPayload = { bids?: KrakenLevel[]; asks?: KrakenLevel[] };
+type KrakenBookUpdate = { bs?: KrakenLevel[]; as?: KrakenLevel[]; b?: KrakenLevel[]; a?: KrakenLevel[] };
 
 const formatVolume = (vol: number) => {
   if (vol >= 1e9) return (vol / 1e9).toFixed(2) + "B";
@@ -59,16 +65,16 @@ export class KrakenAdapter implements ExchangeAdapter {
   async fetchTickers(): Promise<Ticker[]> {
     try {
       const res = await fetch(`${KRAKEN_REST_URL}/Ticker`);
-      const response = await res.json();
+      const response = (await res.json()) as { error?: string[]; result?: Record<string, KrakenTickerPayload> };
       
-      if (response.error?.length > 0 || !response.result) {
+      if ((response.error?.length ?? 0) > 0 || !response.result) {
         console.error("Kraken API error:", response.error);
         return [];
       }
 
       const tickers: Ticker[] = [];
       
-      for (const [symbol, data] of Object.entries(response.result as Record<string, any>)) {
+      for (const [symbol, data] of Object.entries(response.result)) {
         if (!symbol.includes('USD')) continue;
         
         const price = parseFloat(data.c[0]);
@@ -113,18 +119,18 @@ export class KrakenAdapter implements ExchangeAdapter {
       const res = await fetch(
         `${KRAKEN_REST_URL}/OHLC?pair=${symbol}&interval=${krakenInterval}&since=${since}`
       );
-      const response = await res.json();
+      const response = (await res.json()) as { error?: string[]; result?: Record<string, KrakenOhlc[] | string> };
 
-      if (response.error?.length > 0 || !response.result) {
+      if ((response.error?.length ?? 0) > 0 || !response.result) {
         console.error("Kraken API error:", response.error);
         return [];
       }
 
-      const data = Object.values(response.result)[0] as any[];
+      const data = Object.values(response.result).find(Array.isArray) as KrakenOhlc[] | undefined;
       if (!Array.isArray(data)) return [];
 
-      return data.map((d: any) => ({
-        time: d[0],
+      return data.map((d) => ({
+        time: Number(d[0]),
         open: parseFloat(d[1]),
         high: parseFloat(d[2]),
         low: parseFloat(d[3]),
@@ -143,21 +149,21 @@ export class KrakenAdapter implements ExchangeAdapter {
 
     try {
       const res = await fetch(`${KRAKEN_REST_URL}/Depth?pair=${symbol}&count=${limit}`);
-      const response = await res.json();
+      const response = (await res.json()) as { error?: string[]; result?: Record<string, KrakenBookPayload> };
       
-      if (response.error?.length > 0 || !response.result) {
+      if ((response.error?.length ?? 0) > 0 || !response.result) {
         console.error("Kraken API error:", response.error);
         return { bids: [], asks: [] };
       }
 
-      const data = Object.values(response.result)[0] as any;
+      const data = Object.values(response.result)[0];
       
       return {
-        bids: (data.bids || []).map((b: any) => ({ 
+        bids: (data.bids || []).map((b) => ({ 
           price: parseFloat(b[0]), 
           size: parseFloat(b[1]) 
         })),
-        asks: (data.asks || []).map((a: any) => ({ 
+        asks: (data.asks || []).map((a) => ({ 
           price: parseFloat(a[0]), 
           size: parseFloat(a[1]) 
         })),
@@ -186,7 +192,7 @@ export class KrakenAdapter implements ExchangeAdapter {
       const data = JSON.parse(event.data);
       
       if (Array.isArray(data) && data[2] === 'ticker') {
-        const tickerData = data[1];
+        const tickerData = data[1] as KrakenWsTickerPayload;
         const price = parseFloat(tickerData.c[0]);
         const open = parseFloat(tickerData.o[0]);
         const change24h = open !== 0 ? ((price - open) / open) * 100 : 0;
@@ -265,26 +271,26 @@ export class KrakenAdapter implements ExchangeAdapter {
       }));
     };
 
-    let orderbook = { bids: [] as any[], asks: [] as any[] };
+    let orderbook: OrderBookData = { bids: [], asks: [] };
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       
       if (Array.isArray(data)) {
-        const updates = data[1];
+        const updates = data[1] as KrakenBookUpdate;
         
         // Snapshot
         if (updates.bs && updates.as) {
           orderbook = {
-            bids: updates.bs.map((b: any) => ({ price: parseFloat(b[0]), size: parseFloat(b[1]) })),
-            asks: updates.as.map((a: any) => ({ price: parseFloat(a[0]), size: parseFloat(a[1]) }))
+            bids: updates.bs.map((b) => ({ price: parseFloat(b[0]), size: parseFloat(b[1]) })),
+            asks: updates.as.map((a) => ({ price: parseFloat(a[0]), size: parseFloat(a[1]) }))
           };
           callback(orderbook);
         }
         // Updates
         else if (updates.b || updates.a) {
           if (updates.b) {
-            updates.b.forEach((bid: any) => {
+            updates.b.forEach((bid) => {
               const price = parseFloat(bid[0]);
               const size = parseFloat(bid[1]);
               const idx = orderbook.bids.findIndex(b => b.price === price);
@@ -300,7 +306,7 @@ export class KrakenAdapter implements ExchangeAdapter {
           }
           
           if (updates.a) {
-            updates.a.forEach((ask: any) => {
+            updates.a.forEach((ask) => {
               const price = parseFloat(ask[0]);
               const size = parseFloat(ask[1]);
               const idx = orderbook.asks.findIndex(a => a.price === price);

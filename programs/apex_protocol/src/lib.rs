@@ -122,6 +122,9 @@ pub mod apex_protocol {
     ) -> Result<()> {
         instructions::initialize_spot_market::handler(ctx, fee_rate)
     }
+    pub fn initialize_spot_orderbook(ctx: Context<InitializeSpotOrderbook>) -> Result<()> {
+        instructions::initialize_spot_orderbook::handler(ctx)
+    }
 
     pub fn deposit_spot(
         ctx: Context<DepositSpot>,

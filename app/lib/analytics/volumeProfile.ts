@@ -151,7 +151,6 @@ export function estimateLiquidationLevels(
   
   for (let i = 1; i < candles.length; i++) {
     const candle = candles[i];
-    const prevCandle = candles[i - 1];
     
     // Look for large volume wicks (potential liquidations)
     const upperWick = candle.high - Math.max(candle.open, candle.close);

@@ -3,6 +3,19 @@ import { ExchangeAdapter, Ticker, Candle, OrderBookData } from './types';
 const BINANCE_REST_URL = "https://data-api.binance.vision/api/v3";
 const BINANCE_WS_URL = "wss://data-stream.binance.vision:9443/ws";
 
+type BinanceTickerPayload = {
+  symbol: string;
+  lastPrice: string;
+  priceChangePercent: string;
+  quoteVolume: string;
+  highPrice: string;
+  lowPrice: string;
+};
+type BinanceKlinePayload = [number, string, string, string, string, string, ...unknown[]];
+type BinanceDepthPayload = { bids: [string, string][]; asks: [string, string][] };
+type BinanceTickerUpdate = { c: string; P: string; q: string; h: string; l: string };
+type BinanceKlineUpdate = { k?: { t: number; o: string; h: string; l: string; c: string; v: string } };
+
 const formatVolume = (vol: number) => {
   if (vol >= 1e9) return (vol / 1e9).toFixed(2) + "B";
   if (vol >= 1e6) return (vol / 1e6).toFixed(2) + "M";
@@ -24,13 +37,13 @@ export class BinanceAdapter implements ExchangeAdapter {
   async fetchTickers(): Promise<Ticker[]> {
     try {
       const res = await fetch(`${BINANCE_REST_URL}/ticker/24hr`);
-      const data = await res.json();
+      const data: unknown = await res.json();
       
       if (!Array.isArray(data)) return [];
 
-      const filtered = data.filter((d: any) => d.symbol.endsWith("USDT"));
+      const filtered = (data as BinanceTickerPayload[]).filter((d) => d.symbol.endsWith("USDT"));
 
-      return filtered.map((d: any) => ({
+      return filtered.map((d) => ({
         symbol: this.denormalizeSymbol(d.symbol),
         price: parseFloat(d.lastPrice),
         change24h: parseFloat(d.priceChangePercent) || 0,
@@ -52,11 +65,11 @@ export class BinanceAdapter implements ExchangeAdapter {
       const res = await fetch(
         `${BINANCE_REST_URL}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
       );
-      const data = await res.json();
+      const data: unknown = await res.json();
 
       if (!Array.isArray(data)) return [];
 
-      return data.map((d: any) => ({
+      return (data as BinanceKlinePayload[]).map((d) => ({
         time: Math.floor(d[0] / 1000),
         open: parseFloat(d[1]),
         high: parseFloat(d[2]),
@@ -76,14 +89,14 @@ export class BinanceAdapter implements ExchangeAdapter {
 
     try {
       const res = await fetch(`${BINANCE_REST_URL}/depth?symbol=${symbol}&limit=${limit}`);
-      const data = await res.json();
+      const data = (await res.json()) as BinanceDepthPayload;
       
       return {
-        bids: data.bids.map((b: any) => ({ 
+        bids: data.bids.map((b) => ({ 
           price: parseFloat(b[0]), 
           size: parseFloat(b[1]) 
         })),
-        asks: data.asks.map((a: any) => ({ 
+        asks: data.asks.map((a) => ({ 
           price: parseFloat(a[0]), 
           size: parseFloat(a[1]) 
         })),
@@ -101,7 +114,7 @@ export class BinanceAdapter implements ExchangeAdapter {
     const ws = new WebSocket(`${BINANCE_WS_URL}/${symbol.toLowerCase()}@ticker`);
 
     ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+      const data = JSON.parse(event.data) as BinanceTickerUpdate;
       callback({
         symbol: pair,
         price: parseFloat(data.c),
@@ -124,7 +137,7 @@ export class BinanceAdapter implements ExchangeAdapter {
     );
 
     ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+      const data = JSON.parse(event.data) as BinanceKlineUpdate;
       if (!data.k) return;
       
       callback({
@@ -149,15 +162,15 @@ export class BinanceAdapter implements ExchangeAdapter {
     );
 
     ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+      const data = JSON.parse(event.data) as BinanceDepthPayload;
       if(!data.bids || !data.asks) return;
       
       callback({
-        bids: data.bids.map((b: any) => ({ 
+        bids: data.bids.map((b) => ({ 
           price: parseFloat(b[0]), 
           size: parseFloat(b[1]) 
         })),
-        asks: data.asks.map((a: any) => ({ 
+        asks: data.asks.map((a) => ({ 
           price: parseFloat(a[0]), 
           size: parseFloat(a[1]) 
         }))

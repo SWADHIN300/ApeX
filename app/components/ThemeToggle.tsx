@@ -1,27 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useLocalStorageState, useSystemDarkTheme } from "@/hooks/useLocalStorageState";
 import { Moon, Sun } from "lucide-react";
 
 export default function ThemeToggle() {
-  const [isDark, setIsDark] = useState(true);
+  const [theme, setTheme] = useLocalStorageState<"dark" | "light" | "system">(
+    "sol-dex-theme",
+    "dark",
+    (value) => value === "light" || value === "system" ? value : "dark",
+    (value) => value
+  );
+  const systemIsDark = useSystemDarkTheme();
+  const isDark = theme === "system" ? systemIsDark : theme === "dark";
 
   useEffect(() => {
-    const saved = localStorage.getItem("sol-dex-theme");
-    const dark =
-      saved === "system"
-        ? window.matchMedia("(prefers-color-scheme: dark)").matches
-        : saved
-        ? saved === "dark"
-        : true;
-    setIsDark(dark);
     document.documentElement.classList.remove("dark", "light");
-    document.documentElement.classList.add(dark ? "dark" : "light");
-  }, []);
+    document.documentElement.classList.add(isDark ? "dark" : "light");
+  }, [isDark]);
 
   const toggle = () => {
     const next = !isDark;
-    setIsDark(next);
+    setTheme(next ? "dark" : "light");
     document.documentElement.classList.remove("dark", "light");
     document.documentElement.classList.add(next ? "dark" : "light");
     localStorage.setItem("sol-dex-theme", next ? "dark" : "light");

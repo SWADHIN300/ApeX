@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import CoinIcon from "./CoinIcon";
+import { useClientMounted } from "@/hooks/useLocalStorageState";
 
 function CustomWalletButton() {
   const { connected } = useWallet();
@@ -54,6 +55,7 @@ export default function TopBar({
 }) {
   const { market, setMarket, markets } = useMarket();
   const price = market?.price ?? 0;
+  const marketSymbol = market?.symbol;
   const [flashClass, setFlashClass] = useState("");
   const [priceDir, setPriceDir] = useState<"up" | "down" | null>(null);
   const prevRef = useRef(market?.price || 0);
@@ -64,7 +66,7 @@ export default function TopBar({
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
   const { network, setNetwork } = useNetwork();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useClientMounted();
   const pathname = usePathname();
 
   const navItems = [
@@ -73,8 +75,6 @@ export default function TopBar({
     { label: "Stats",       href: "/stats"       },
     { label: "Leaderboard", href: "/leaderboard" },
   ];
-
-  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -88,19 +88,19 @@ export default function TopBar({
   }, []);
 
   useEffect(() => {
-    if (!market) return;
+    if (!marketSymbol) return;
 
-    if (symbolRef.current !== market.symbol) {
-      symbolRef.current = market.symbol;
-      prevRef.current = market.price;
+    if (symbolRef.current !== marketSymbol) {
+      symbolRef.current = marketSymbol;
+      prevRef.current = price;
       return;
     }
 
     const previous = prevRef.current;
-    prevRef.current = market.price;
-    if (previous <= 0 || market.price === previous) return;
+    prevRef.current = price;
+    if (previous <= 0 || price === previous) return;
 
-    const direction = market.price > previous ? "up" : "down";
+    const direction = price > previous ? "up" : "down";
     setFlashKey((key) => key + 1);
     setPriceDir(direction);
     setFlashClass(direction === "up" ? "flash-up" : "flash-down");
@@ -110,7 +110,7 @@ export default function TopBar({
     }, 500);
 
     return () => clearTimeout(timeout);
-  }, [market?.symbol, market?.price]);
+  }, [marketSymbol, price]);
   const fmt = (n: number) =>
     n.toLocaleString("en-US", { minimumFractionDigits: 2 });
 
@@ -146,6 +146,7 @@ export default function TopBar({
             alt="ApeX Logo"
             width={24}
             height={24}
+            priority
             className="rounded-sm"
             style={{ filter: "drop-shadow(0 0 6px rgba(124,111,255,0.5))" }}
           />

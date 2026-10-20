@@ -20,28 +20,40 @@ export default function AccountsPage() {
   const { network } = useNetwork()
   const { market } = useMarket()
   const { portfolio, refreshLedgerBalance } = useTrade()
-  const [solBalance, setSolBalance] = useState(0)
+  const [balanceState, setBalanceState] = useState<{
+    address: string | null
+    balance: number
+    error: string
+  }>({ address: null, balance: 0, error: '' })
   const [amount, setAmount] = useState('')
   const [mode, setMode] = useState<TransferMode>('deposit')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [txError, setTxError] = useState('')
   const [txSignature, setTxSignature] = useState('')
-  const [balanceError, setBalanceError] = useState('')
+  const walletAddress = publicKey?.toBase58() ?? null
 
   useEffect(() => {
-    if (!publicKey) {
-      setSolBalance(0)
-      setBalanceError('')
-      return
-    }
+    if (!publicKey || !walletAddress) return
+    let active = true
 
     connection.getBalance(publicKey)
-      .then((balance) => setSolBalance(balance / 1e9))
-      .catch(() => {
-        setSolBalance(0)
-        setBalanceError('Unable to load SOL balance from the current RPC endpoint.')
+      .then((balance) => {
+        if (active) setBalanceState({ address: walletAddress, balance: balance / 1e9, error: '' })
       })
-  }, [connection, publicKey])
+      .catch(() => {
+        if (active) {
+          setBalanceState({
+            address: walletAddress,
+            balance: 0,
+            error: 'Unable to load SOL balance from the current RPC endpoint.',
+          })
+        }
+      })
+    return () => { active = false }
+  }, [connection, publicKey, walletAddress])
+
+  const solBalance = balanceState.address === walletAddress ? balanceState.balance : 0
+  const balanceError = balanceState.address === walletAddress ? balanceState.error : ''
 
   const copyAddress = () => {
     if (!publicKey) return

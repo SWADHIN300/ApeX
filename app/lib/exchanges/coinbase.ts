@@ -2,6 +2,17 @@ import { ExchangeAdapter, Ticker, Candle, OrderBookData } from './types';
 
 const COINBASE_REST_URL = "https://api.exchange.coinbase.com";
 const COINBASE_WS_URL = "wss://ws-feed.exchange.coinbase.com";
+type CoinbaseProduct = { id: string; status: string };
+type CoinbaseTickerPayload = { price?: string; open_24h?: string; high_24h?: string; low_24h?: string; volume_24h?: string };
+type CoinbaseStatsPayload = { last?: string; open?: string; volume?: string; high?: string; low?: string };
+type CoinbaseLevel = [string, string];
+type CoinbaseBookMessage = {
+  type?: string;
+  bids?: CoinbaseLevel[];
+  asks?: CoinbaseLevel[];
+  changes?: ["buy" | "sell", string, string][];
+};
+type CoinbaseMatchMessage = { type?: string; product_id?: string; price?: string; size?: string; time?: string };
 
 const formatVolume = (vol: number) => {
   if (vol >= 1e9) return (vol / 1e9).toFixed(2) + "B";
@@ -26,33 +37,33 @@ export class CoinbaseAdapter implements ExchangeAdapter {
   async fetchTickers(): Promise<Ticker[]> {
     try {
       const res = await fetch(`${COINBASE_REST_URL}/products`);
-      const products = await res.json();
+      const products: unknown = await res.json();
       
       if (!Array.isArray(products)) return [];
 
       // Filter for USD pairs
-      const usdProducts = products.filter((p: any) => p.id.endsWith('-USD') && p.status === 'online');
+      const usdProducts = (products as CoinbaseProduct[]).filter((p) => p.id.endsWith('-USD') && p.status === 'online');
 
       const tickers = await Promise.all(
-        usdProducts.slice(0, 50).map(async (p: any) => {
+        usdProducts.slice(0, 50).map(async (p) => {
           try {
             const tickerRes = await fetch(`${COINBASE_REST_URL}/products/${p.id}/ticker`);
-            const ticker = await tickerRes.json();
+            const ticker = (await tickerRes.json()) as CoinbaseTickerPayload;
             
             const statsRes = await fetch(`${COINBASE_REST_URL}/products/${p.id}/stats`);
-            const stats = await statsRes.json();
+            const stats = (await statsRes.json()) as CoinbaseStatsPayload;
 
-            const price = parseFloat(ticker.price || stats.last || 0);
-            const open = parseFloat(stats.open || price);
+            const price = Number(ticker.price ?? stats.last ?? 0);
+            const open = Number(stats.open ?? price);
             const change24h = open !== 0 ? ((price - open) / open) * 100 : 0;
 
             return {
               symbol: this.denormalizeSymbol(p.id),
               price,
               change24h,
-              volume24h: formatVolume(parseFloat(stats.volume || 0)),
-              high24h: parseFloat(stats.high || price),
-              low24h: parseFloat(stats.low || price),
+              volume24h: formatVolume(Number(stats.volume ?? 0)),
+              high24h: Number(stats.high ?? price),
+              low24h: Number(stats.low ?? price),
             };
           } catch (err) {
             console.error(`Coinbase: Error fetching ticker for ${p.id}:`, err);
@@ -90,13 +101,13 @@ export class CoinbaseAdapter implements ExchangeAdapter {
       const res = await fetch(
         `${COINBASE_REST_URL}/products/${symbol}/candles?granularity=${granularity}&start=${startTime}&end=${endTime}`
       );
-      const data = await res.json();
+      const data: unknown = await res.json();
 
       if (!Array.isArray(data)) return [];
 
       // Coinbase returns [time, low, high, open, close, volume]
       return data
-        .map((d: any) => ({
+        .map((d) => ({
           time: d[0],
           open: d[3],
           high: d[2],
@@ -118,14 +129,14 @@ export class CoinbaseAdapter implements ExchangeAdapter {
     try {
       const level = limit > 50 ? 3 : 2;
       const res = await fetch(`${COINBASE_REST_URL}/products/${symbol}/book?level=${level}`);
-      const data = await res.json();
+      const data = (await res.json()) as { bids?: CoinbaseLevel[]; asks?: CoinbaseLevel[] };
       
       return {
-        bids: (data.bids || []).slice(0, limit).map((b: any) => ({ 
+        bids: (data.bids || []).slice(0, limit).map((b) => ({ 
           price: parseFloat(b[0]), 
           size: parseFloat(b[1]) 
         })),
-        asks: (data.asks || []).slice(0, limit).map((a: any) => ({ 
+        asks: (data.asks || []).slice(0, limit).map((a) => ({ 
           price: parseFloat(a[0]), 
           size: parseFloat(a[1]) 
         })),
@@ -183,6 +194,17 @@ export class CoinbaseAdapter implements ExchangeAdapter {
 
     const ws = new WebSocket(COINBASE_WS_URL);
     
+    const intervalSeconds: Record<string, number> = {
+      '1m': 60,
+      '5m': 300,
+      '15m': 900,
+      '1h': 3600,
+      '4h': 14400,
+      '1d': 86400,
+    };
+    const bucketSeconds = intervalSeconds[interval] ?? 900;
+    let currentCandle: Candle | null = null;
+
     ws.onopen = () => {
       ws.send(JSON.stringify({
         type: 'subscribe',
@@ -191,9 +213,36 @@ export class CoinbaseAdapter implements ExchangeAdapter {
       }));
     };
 
-    // Coinbase doesn't have direct kline WebSocket, we'd need to build candles from trades
-    // For now, return a no-op
-    console.warn('Coinbase: Real-time klines not fully implemented, using trade aggregation');
+    ws.onmessage = (event) => {
+      const trade = JSON.parse(event.data) as CoinbaseMatchMessage;
+      if (trade.type !== "match" || trade.product_id !== symbol || !trade.time) return;
+
+      const timestamp = Math.floor(new Date(trade.time).getTime() / 1000);
+      const price = Number(trade.price);
+      const size = Number(trade.size);
+      if (!Number.isFinite(timestamp) || !Number.isFinite(price) || !Number.isFinite(size) || price <= 0 || size < 0) return;
+
+      const bucketTime = Math.floor(timestamp / bucketSeconds) * bucketSeconds;
+      if (!currentCandle || currentCandle.time !== bucketTime) {
+        currentCandle = {
+          time: bucketTime,
+          open: price,
+          high: price,
+          low: price,
+          close: price,
+          volume: size,
+        };
+      } else {
+        currentCandle = {
+          ...currentCandle,
+          high: Math.max(currentCandle.high, price),
+          low: Math.min(currentCandle.low, price),
+          close: price,
+          volume: currentCandle.volume + size,
+        };
+      }
+      callback(currentCandle);
+    };
 
     return () => ws.close();
   }
@@ -212,20 +261,20 @@ export class CoinbaseAdapter implements ExchangeAdapter {
       }));
     };
 
-    let orderbook = { bids: [] as any[], asks: [] as any[] };
+    let orderbook: OrderBookData = { bids: [], asks: [] };
 
     ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+      const data = JSON.parse(event.data) as CoinbaseBookMessage;
       
       if (data.type === 'snapshot') {
         orderbook = {
-          bids: data.bids.map((b: any) => ({ price: parseFloat(b[0]), size: parseFloat(b[1]) })),
-          asks: data.asks.map((a: any) => ({ price: parseFloat(a[0]), size: parseFloat(a[1]) }))
+          bids: (data.bids ?? []).map((b) => ({ price: parseFloat(b[0]), size: parseFloat(b[1]) })),
+          asks: (data.asks ?? []).map((a) => ({ price: parseFloat(a[0]), size: parseFloat(a[1]) }))
         };
         callback(orderbook);
       } else if (data.type === 'l2update') {
         // Update orderbook with changes
-        data.changes.forEach(([side, price, size]: any) => {
+        (data.changes ?? []).forEach(([side, price, size]) => {
           const priceNum = parseFloat(price);
           const sizeNum = parseFloat(size);
           const book = side === 'buy' ? orderbook.bids : orderbook.asks;

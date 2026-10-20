@@ -118,11 +118,15 @@ export class ApexAdapter implements ExchangeAdapter {
    * should use `useOrderBook` directly.
    */
   async fetchOrderBook(_symbol: string, _limit: number = 20): Promise<OrderBookData> {
+    void _symbol;
+    void _limit;
     const empty: { bids: OrderBookLevel[]; asks: OrderBookLevel[] } = { bids: [], asks: [] };
     return empty;
   }
 
   subscribeOrderBook(_symbol: string, _callback: (data: OrderBookData) => void): () => void {
+    void _symbol;
+    void _callback;
     return () => {};
   }
 

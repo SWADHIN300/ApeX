@@ -98,7 +98,7 @@ export default function RewardsPage() {
                 </div>
               </div>
               <div className="text-body-sm font-ui text-on-surface-variant">
-                Earn 15% of your referrals' trading fees.
+                Earn 15% of your referrals&apos; trading fees.
               </div>
             </div>
           </div>

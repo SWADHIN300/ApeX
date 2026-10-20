@@ -5,23 +5,25 @@ import { useMarket } from "@/contexts/MarketContext";
 import { cachedApi } from "@/lib/cache/cachedApi";
 import { calculateOrderFlow, OrderFlowData } from "@/lib/analytics/volumeProfile";
 import { TrendingUp, TrendingDown, Activity } from "lucide-react";
+import type { ExchangeName } from "@/lib/exchanges";
 
 interface Props {
   timeframe: string;
-  exchange?: string;
+  exchange?: ExchangeName;
 }
 
 export default function OrderFlowPanel({ timeframe, exchange = 'binance' }: Props) {
   const { market } = useMarket();
+  const marketSymbol = market?.symbol;
   const [orderFlow, setOrderFlow] = useState<OrderFlowData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!market) return;
+    if (!marketSymbol) return;
 
     const loadOrderFlow = async () => {
       setIsLoading(true);
-      const candles = await cachedApi.fetchKlines(market.symbol, timeframe, 100, exchange as any);
+      const candles = await cachedApi.fetchKlines(marketSymbol, timeframe, 100, exchange);
       if (candles.length > 0) {
         const flow = calculateOrderFlow(candles);
         setOrderFlow(flow);
@@ -30,7 +32,7 @@ export default function OrderFlowPanel({ timeframe, exchange = 'binance' }: Prop
     };
 
     loadOrderFlow();
-  }, [market?.symbol, timeframe, exchange]);
+  }, [marketSymbol, timeframe, exchange]);
 
   if (isLoading) {
     return (

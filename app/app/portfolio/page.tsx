@@ -1,12 +1,10 @@
 'use client'
 import AppShell from '@/components/layout/AppShell'
 import { useTrade } from '@/contexts/TradeContext'
-import { useMarket } from '@/contexts/MarketContext'
-import { PieChart, TrendingUp, TrendingDown, Wallet, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { PieChart, Wallet, ArrowUpRight, ArrowDownRight } from 'lucide-react'
 
 export default function PortfolioPage() {
   const { portfolio, positions, trades } = useTrade()
-  const { market } = useMarket() // just to subscribe to market updates in the background for PnL
 
   const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const isPos = portfolio.totalPnl >= 0

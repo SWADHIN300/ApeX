@@ -61,8 +61,8 @@ class ExchangeManager {
   }
 
   // Aggregate data from all exchanges
-  async fetchAggregatedTickers(): Promise<Map<string, Ticker[]>> {
-    const results = new Map<string, Ticker[]>();
+  async fetchAggregatedTickers(): Promise<Map<string, AggregatedTicker[]>> {
+    const results = new Map<string, AggregatedTicker[]>();
     
     const allTickers = await Promise.all([
       this.fetchTickers('binance'),
@@ -77,7 +77,7 @@ class ExchangeManager {
         if (!results.has(ticker.symbol)) {
           results.set(ticker.symbol, []);
         }
-        results.get(ticker.symbol)!.push({ ...ticker, exchange: exchangeName } as any);
+        results.get(ticker.symbol)!.push({ ...ticker, exchange: exchangeName });
       });
     });
 
@@ -99,6 +99,10 @@ class ExchangeManager {
     const sum = validTickers.reduce((acc, t) => acc + t.price, 0);
     return sum / validTickers.length;
   }
+}
+
+export interface AggregatedTicker extends Ticker {
+  exchange: ExchangeName;
 }
 
 // Singleton instance

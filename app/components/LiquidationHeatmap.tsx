@@ -5,23 +5,25 @@ import { useMarket } from "@/contexts/MarketContext";
 import { cachedApi } from "@/lib/cache/cachedApi";
 import { estimateLiquidationLevels, LiquidationLevel } from "@/lib/analytics/volumeProfile";
 import { Flame, TrendingUp, TrendingDown } from "lucide-react";
+import type { ExchangeName } from "@/lib/exchanges";
 
 interface Props {
   timeframe: string;
-  exchange?: string;
+  exchange?: ExchangeName;
 }
 
 export default function LiquidationHeatmap({ timeframe, exchange = 'binance' }: Props) {
   const { market } = useMarket();
+  const marketSymbol = market?.symbol;
   const [liquidations, setLiquidations] = useState<LiquidationLevel[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!market) return;
+    if (!marketSymbol) return;
 
     const loadLiquidations = async () => {
       setIsLoading(true);
-      const candles = await cachedApi.fetchKlines(market.symbol, timeframe, 200, exchange as any);
+      const candles = await cachedApi.fetchKlines(marketSymbol, timeframe, 200, exchange);
       if (candles.length > 0) {
         const levels = estimateLiquidationLevels(candles, 1.5);
         // Sort by liquidation volume and take top 20
@@ -34,7 +36,7 @@ export default function LiquidationHeatmap({ timeframe, exchange = 'binance' }: 
     };
 
     loadLiquidations();
-  }, [market?.symbol, timeframe, exchange]);
+  }, [marketSymbol, timeframe, exchange]);
 
   if (isLoading) {
     return (

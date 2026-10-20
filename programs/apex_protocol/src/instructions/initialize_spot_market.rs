@@ -15,32 +15,23 @@ pub struct InitializeSpotMarket<'info> {
         seeds = [b"spot_market", base_mint.key().as_ref(), quote_mint.key().as_ref()],
         bump
     )]
-    pub spot_market: Account<'info, SpotMarket>,
-    pub base_mint: Account<'info, Mint>,
-    pub quote_mint: Account<'info, Mint>,
+    pub spot_market: Box<Account<'info, SpotMarket>>,
+    pub base_mint: Box<Account<'info, Mint>>,
+    pub quote_mint: Box<Account<'info, Mint>>,
     #[account(
         init,
         payer = authority,
         token::mint = base_mint,
         token::authority = spot_market
     )]
-    pub base_vault: Account<'info, TokenAccount>,
+    pub base_vault: Box<Account<'info, TokenAccount>>,
     #[account(
         init,
         payer = authority,
         token::mint = quote_mint,
         token::authority = spot_market
     )]
-    pub quote_vault: Account<'info, TokenAccount>,
-    /// Each spot market gets its own book, distinct from the perp book.
-    #[account(
-        init,
-        payer = authority,
-        space = 8 + OrderBook::LEN,
-        seeds = [b"spot_orderbook", spot_market.key().as_ref()],
-        bump
-    )]
-    pub order_book: Account<'info, OrderBook>,
+    pub quote_vault: Box<Account<'info, TokenAccount>>,
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
     pub rent: Sysvar<'info, Rent>,
@@ -63,12 +54,6 @@ pub fn handler(ctx: Context<InitializeSpotMarket>, fee_rate: u64) -> Result<()> 
     market.fee_rate = fee_rate;
     market.fees_accrued = 0;
     market.bump = ctx.bumps.spot_market;
-
-    let order_book = &mut ctx.accounts.order_book;
-    order_book.market = market.key();
-    order_book.asks = Vec::new();
-    order_book.bids = Vec::new();
-    order_book.bump = ctx.bumps.order_book;
 
     Ok(())
 }

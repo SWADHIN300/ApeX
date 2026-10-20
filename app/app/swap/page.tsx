@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ArrowDownUp, ExternalLink, RefreshCw } from "lucide-react";
 import { VersionedTransaction } from "@solana/web3.js";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
@@ -36,23 +36,25 @@ export default function SwapPage() {
   const { connection } = useConnection();
   const { publicKey, connected, sendTransaction } = useWallet();
   const tokens = useMemo(() => getSwapTokens(network), [network]);
-  const [inputToken, setInputToken] = useState<SwapToken | null>(null);
-  const [outputToken, setOutputToken] = useState<SwapToken | null>(null);
+  const [inputMint, setInputMint] = useState<string | null>(null);
+  const [outputMint, setOutputMint] = useState<string | null>(null);
+  const inputToken = tokens.find((token) => token.mint === inputMint) ?? tokens[0] ?? null;
+  const outputToken = tokens.find((token) => token.mint === outputMint) ?? tokens[1] ?? tokens[0] ?? null;
+  const setInputToken = (token: SwapToken | null) => setInputMint(token?.mint ?? null);
+  const setOutputToken = (token: SwapToken | null) => setOutputMint(token?.mint ?? null);
   const [amount, setAmount] = useState("");
   const [slippageBps, setSlippageBps] = useState(50);
-  const [quote, setQuote] = useState<QuoteResponse | null>(null);
-  const [signature, setSignature] = useState("");
-  const [error, setError] = useState("");
+  const [quoteState, setQuoteState] = useState<{ network: string; value: QuoteResponse | null }>({ network, value: null });
+  const quote = quoteState.network === network ? quoteState.value : null;
+  const setQuote = (value: QuoteResponse | null) => setQuoteState({ network, value });
+  const [signatureState, setSignatureState] = useState<{ network: string; value: string }>({ network, value: "" });
+  const signature = signatureState.network === network ? signatureState.value : "";
+  const setSignature = (value: string) => setSignatureState({ network, value });
+  const [errorState, setErrorState] = useState<{ network: string; value: string }>({ network, value: "" });
+  const error = errorState.network === network ? errorState.value : "";
+  const setError = (value: string) => setErrorState({ network, value });
   const [isQuoting, setIsQuoting] = useState(false);
   const [isSwapping, setIsSwapping] = useState(false);
-
-  useEffect(() => {
-    setInputToken(tokens[0] ?? null);
-    setOutputToken(tokens[1] ?? tokens[0] ?? null);
-    setQuote(null);
-    setSignature("");
-    setError("");
-  }, [tokens]);
 
   const explorerCluster = network === "devnet" ? "?cluster=devnet" : "";
   const atomicAmount =

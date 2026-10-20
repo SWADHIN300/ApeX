@@ -33,7 +33,7 @@ export async function GET(request: Request) {
         MIN(timestamp) as first_trade_date
       FROM trades
     `;
-    const params: any[] = [];
+    const params: string[] = [];
 
     if (userAddress) {
       query += ` WHERE user_address = $1`;
@@ -51,7 +51,7 @@ export async function GET(request: Request) {
       winRate: parseFloat((row.win_rate || 0).toFixed(1)),
       firstTradeDate: row.first_trade_date || null,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Failed to query stats:", err);
     return NextResponse.json({
       totalVolume: 0,

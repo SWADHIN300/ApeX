@@ -31,7 +31,6 @@ const FALLBACK_LEADERBOARD: LeaderboardEntry[] = [
 export default function LeaderboardPage() {
   const [search, setSearch] = useState('')
   const [apiLeaderboard, setApiLeaderboard] = useState<LeaderboardEntry[]>(FALLBACK_LEADERBOARD)
-  const [isLoading, setIsLoading] = useState(true)
   const { publicKey } = useWallet()
   const { portfolio, trades } = useTrade()
 
@@ -48,8 +47,6 @@ export default function LeaderboardPage() {
         }
       } catch {
         // use fallback
-      } finally {
-        if (mounted) setIsLoading(false)
       }
     }
     void loadData()
@@ -187,7 +184,7 @@ export default function LeaderboardPage() {
           
           {filtered.length === 0 && (
             <div className="py-12 text-center font-ui text-body-sm text-on-surface-variant">
-              No traders found matching "{search}"
+              No traders found matching &quot;{search}&quot;
             </div>
           )}
         </div>

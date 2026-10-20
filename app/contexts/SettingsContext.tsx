@@ -1,5 +1,6 @@
 "use client";
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext } from "react";
+import { useLocalStorageState } from "@/hooks/useLocalStorageState";
 
 export type Settings = {
   currency: string;
@@ -35,25 +36,14 @@ const SettingsContext = createContext<SettingsContextType | undefined>(
 );
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
-  const [settings, setSettings] = useState<Settings>(defaultSettings);
-
-  useEffect(() => {
-    const saved = localStorage.getItem("apex-settings");
-    if (saved) {
-      try {
-        setSettings({ ...defaultSettings, ...JSON.parse(saved) });
-      } catch (e) {
-        console.error("Failed to parse settings", e);
-      }
-    }
-  }, []);
+  const [settings, setSettings] = useLocalStorageState<Settings>(
+    "apex-settings",
+    defaultSettings,
+    (saved) => ({ ...defaultSettings, ...JSON.parse(saved) as Partial<Settings> })
+  );
 
   const updateSettings = (newSettings: Partial<Settings>) => {
-    setSettings((prev) => {
-      const updated = { ...prev, ...newSettings };
-      localStorage.setItem("apex-settings", JSON.stringify(updated));
-      return updated;
-    });
+    setSettings((prev) => ({ ...prev, ...newSettings }));
   };
 
   return (

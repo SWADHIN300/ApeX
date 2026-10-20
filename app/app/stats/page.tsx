@@ -2,7 +2,7 @@
 import AppShell from '@/components/layout/AppShell'
 import { useTrade } from '@/contexts/TradeContext'
 import { useWallet } from '@solana/wallet-adapter-react'
-import { BarChart, Activity, TrendingUp, DollarSign, Clock, Percent } from 'lucide-react'
+import { BarChart, Activity, DollarSign, Percent } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
 interface StatsData {
@@ -127,7 +127,7 @@ export default function StatsPage() {
             <div className="flex items-center justify-between py-3 border-b border-outline-variant/30">
               <span className="text-body-sm text-on-surface-variant">First Recorded Trade</span>
               <span className="font-data text-body-sm text-on-surface">
-                {stats?.firstTradeDate 
+                {isLoading ? "Loading…" : stats?.firstTradeDate 
                   ? new Date(stats.firstTradeDate).toLocaleDateString()
                   : trades.length > 0 
                     ? new Date(trades[trades.length - 1].time * 1000).toLocaleDateString() 

@@ -1,4 +1,3 @@
-import { Candle, Ticker, OrderBookData } from '../exchanges/types';
 
 const DB_NAME = 'apex_chart_cache';
 const DB_VERSION = 1;

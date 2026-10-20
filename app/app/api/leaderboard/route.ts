@@ -64,7 +64,7 @@ export async function GET() {
     });
 
     return NextResponse.json({ leaderboard });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Failed to query leaderboard:", err);
     return NextResponse.json({ leaderboard: SEED_LEADERBOARD });
   }

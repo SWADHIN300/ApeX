@@ -5,24 +5,26 @@ import { useMarket } from "@/contexts/MarketContext";
 import { cachedApi } from "@/lib/cache/cachedApi";
 import { calculateVolumeProfile, VolumeProfileData } from "@/lib/analytics/volumeProfile";
 import { BarChart2 } from "lucide-react";
+import type { ExchangeName } from "@/lib/exchanges";
 
 interface Props {
   timeframe: string;
-  exchange?: string;
+  exchange?: ExchangeName;
 }
 
 export default function VolumeProfilePanel({ timeframe, exchange = 'binance' }: Props) {
   const { market } = useMarket();
+  const marketSymbol = market?.symbol;
   const [volumeProfile, setVolumeProfile] = useState<VolumeProfileData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    if (!market) return;
+    if (!marketSymbol) return;
 
     const loadVolumeProfile = async () => {
       setIsLoading(true);
-      const candles = await cachedApi.fetchKlines(market.symbol, timeframe, 500, exchange as any);
+      const candles = await cachedApi.fetchKlines(marketSymbol, timeframe, 500, exchange);
       if (candles.length > 0) {
         const profile = calculateVolumeProfile(candles, 50);
         setVolumeProfile(profile);
@@ -31,7 +33,7 @@ export default function VolumeProfilePanel({ timeframe, exchange = 'binance' }: 
     };
 
     loadVolumeProfile();
-  }, [market?.symbol, timeframe, exchange]);
+  }, [marketSymbol, timeframe, exchange]);
 
   useEffect(() => {
     if (!volumeProfile || !canvasRef.current) return;

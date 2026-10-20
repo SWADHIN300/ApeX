@@ -9,6 +9,7 @@ const BASE_MINT = new web3.PublicKey("So1111111111111111111111111111111111111111
 const QUOTE_MINT = new web3.PublicKey("3NnctwUGZ8iXfK2bFbSKQMSQVJWgxhLveiwg5H3M98NE");
 
 const INIT_SPOT_DISCRIMINATOR = Buffer.from([234, 196, 128, 44, 94, 15, 48, 201]);
+const INIT_SPOT_ORDERBOOK_DISCRIMINATOR = Buffer.from([41, 28, 163, 16, 206, 177, 103, 15]);
 
 async function main() {
   const conn = new web3.Connection(CLUSTER, "confirmed");
@@ -26,19 +27,26 @@ async function main() {
   );
   console.log("Spot Market PDA:", spotMarket.toBase58());
 
-  const marketInfo = await conn.getAccountInfo(spotMarket);
-  if (marketInfo) {
-    console.log("Spot market is ALREADY initialized! Size:", marketInfo.data.length);
-    return;
-  }
-
-  console.log("Spot market NOT initialized. Initializing now...");
-
   const [orderBook] = web3.PublicKey.findProgramAddressSync(
     [Buffer.from("spot_orderbook"), spotMarket.toBuffer()],
     PROGRAM_ID
   );
+  const [marketInfo, orderBookInfo] = await Promise.all([
+    conn.getAccountInfo(spotMarket),
+    conn.getAccountInfo(orderBook),
+  ]);
+  if (marketInfo && orderBookInfo) {
+    console.log("Spot market and order book are already initialized.");
+    return;
+  }
+  if (marketInfo || orderBookInfo) {
+    throw new Error("Spot market state is partial; inspect the PDAs before retrying.");
+  }
+
+  console.log("Spot market NOT initialized. Initializing now...");
+
   console.log("OrderBook PDA:", orderBook.toBase58());
+
 
   const baseVault = web3.Keypair.generate();
   const quoteVault = web3.Keypair.generate();
@@ -47,7 +55,7 @@ async function main() {
   INIT_SPOT_DISCRIMINATOR.copy(data, 0);
   data.writeBigUInt64LE(BigInt(10), 8); // 10 bps fee
 
-  const ix = new web3.TransactionInstruction({
+  const initMarketIx = new web3.TransactionInstruction({
     programId: PROGRAM_ID,
     keys: [
       { pubkey: deployer.publicKey, isSigner: true, isWritable: true },
@@ -56,7 +64,6 @@ async function main() {
       { pubkey: QUOTE_MINT, isSigner: false, isWritable: false },
       { pubkey: baseVault.publicKey, isSigner: true, isWritable: true },
       { pubkey: quoteVault.publicKey, isSigner: true, isWritable: true },
-      { pubkey: orderBook, isSigner: false, isWritable: true },
       { pubkey: web3.SystemProgram.programId, isSigner: false, isWritable: false },
       { pubkey: spl.TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
       { pubkey: web3.SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false },
@@ -64,7 +71,18 @@ async function main() {
     data,
   });
 
-  const tx = new web3.Transaction().add(ix);
+  const initOrderBookIx = new web3.TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: deployer.publicKey, isSigner: true, isWritable: true },
+      { pubkey: spotMarket, isSigner: false, isWritable: false },
+      { pubkey: orderBook, isSigner: false, isWritable: true },
+      { pubkey: web3.SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: INIT_SPOT_ORDERBOOK_DISCRIMINATOR,
+  });
+
+  const tx = new web3.Transaction().add(initMarketIx, initOrderBookIx);
   tx.feePayer = deployer.publicKey;
   const bh = await conn.getLatestBlockhash("confirmed");
   tx.recentBlockhash = bh.blockhash;

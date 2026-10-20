@@ -5,10 +5,11 @@ import VolumeProfilePanel from "./VolumeProfilePanel";
 import OrderFlowPanel from "./OrderFlowPanel";
 import LiquidationHeatmap from "./LiquidationHeatmap";
 import { BarChart2, Activity, Flame, X } from "lucide-react";
+import type { ExchangeName } from "@/lib/exchanges/types";
 
 interface Props {
   timeframe: string;
-  exchange?: string;
+  exchange?: ExchangeName;
   isOpen: boolean;
   onClose: () => void;
 }

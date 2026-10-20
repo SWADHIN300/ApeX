@@ -7,7 +7,7 @@ import TradingViewChart from "./TradingViewChart";
 import AdvancedIndicators, { AdvancedIndicatorConfig } from "./AdvancedIndicators";
 import AdvancedAnalyticsPanel from "./AdvancedAnalyticsPanel";
 import { useMarket } from "@/contexts/MarketContext";
-import { exchangeManager } from "@/lib/exchanges";
+import { exchangeManager, type ExchangeName } from "@/lib/exchanges";
 import {
   LineChart,
   Paintbrush,
@@ -134,7 +134,7 @@ export default function ChartPanel() {
     { id: "area", label: "Area", icon: <TrendingDown size={14} /> },
   ];
 
-  const exchanges = [
+  const exchanges: { id: ExchangeName; label: string }[] = [
     { id: "apex", label: "ApeX (on-chain)" },
     { id: "binance", label: "Binance" },
     { id: "coinbase", label: "Coinbase" },
@@ -446,8 +446,8 @@ export default function ChartPanel() {
                   <button
                     key={id}
                     onClick={() => {
-                      setActiveExchange(id as any);
-                      exchangeManager.setActiveExchange(id as any);
+                      setActiveExchange(id);
+                      exchangeManager.setActiveExchange(id);
                       setShowExchange(false);
                     }}
                     className={`w-full flex items-center justify-between px-3 py-2.5 transition-colors ${
