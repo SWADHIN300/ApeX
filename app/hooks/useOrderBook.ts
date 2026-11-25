@@ -5,17 +5,17 @@ import { subscribeOrderBook } from "@/lib/api";
 import {
   fetchProtocolOrderBook,
   getMarketPdas,
-  subscribeProtocolOrderBook,
 } from "@/lib/apexProtocol";
+import type { ExchangeName } from "@/lib/exchanges";
 import { OrderBookLevel } from "@/lib/types";
 
 /**
  * Where the displayed depth actually came from.
- * - `on-chain`  : the protocol's own OrderBook account
- * - `reference` : a centralized exchange feed (context only, not tradable here)
+ * - `apex`      : the protocol's own on-chain OrderBook account
+ * - exchange name: depth from that external exchange (context only)
  * - `unavailable`: nothing loaded yet
  */
-export type OrderBookSource = "on-chain" | "reference" | "unavailable";
+export type OrderBookSource = ExchangeName | "unavailable";
 
 /**
  * Loads order book depth and reports which source it came from.
@@ -24,11 +24,11 @@ export type OrderBookSource = "on-chain" | "reference" | "unavailable";
  * a Binance stream with no indication in the UI, which made reference data look
  * like ApeX liquidity. Callers now get `source` so they can label it honestly.
  *
- * `preferOnChain` (default true) tries the on-chain book first and only falls
- * back when it is missing or empty. Passing `false` forces the reference feed,
- * which backs the UI toggle.
+ * The selected venue determines the source. External exchange depth is always
+ * identified by its venue and is never presented as ApeX protocol liquidity.
+ * ApeX depth is polled over HTTP so an unavailable RPC WebSocket cannot break it.
  */
-export function useOrderBook(preferOnChain: boolean = true) {
+export function useOrderBook(selectedSource: ExchangeName = "apex") {
   const { market } = useMarket();
   const { connection } = useConnection();
   const [bids, setBids] = useState<OrderBookLevel[]>([]);
@@ -40,9 +40,10 @@ export function useOrderBook(preferOnChain: boolean = true) {
     if (!marketSymbol) return;
 
     let cancelled = false;
+    let pollTimer: ReturnType<typeof setInterval> | undefined;
     let cleanupFn: (() => void) | undefined;
 
-    // Reset asynchronously whenever the market or source preference changes.
+    // Reset asynchronously whenever the market or selected venue changes.
     queueMicrotask(() => {
       if (!cancelled) {
         setBids([]);
@@ -51,19 +52,19 @@ export function useOrderBook(preferOnChain: boolean = true) {
       }
     });
 
-    /** Centralized exchange depth, used for context when ApeX has no book. */
-    const startReferenceFeed = () => {
+    /** External exchange depth is context only; ApeX does not execute against it. */
+    const startExchangeFeed = () => {
       if (cancelled) return;
       cleanupFn = subscribeOrderBook(marketSymbol, (data) => {
         if (cancelled) return;
         setBids(data.bids);
         setAsks(data.asks);
-        setSource("reference");
-      });
+        setSource(selectedSource);
+      }, selectedSource);
     };
 
-    if (!preferOnChain) {
-      startReferenceFeed();
+    if (selectedSource !== "apex") {
+      startExchangeFeed();
       return () => {
         cancelled = true;
         cleanupFn?.();
@@ -77,44 +78,34 @@ export function useOrderBook(preferOnChain: boolean = true) {
         .then((data) => {
           if (cancelled) return;
 
-          if (data.bids.length > 0 || data.asks.length > 0) {
-            setBids(data.bids);
-            setAsks(data.asks);
-            setSource("on-chain");
+          setBids(data.bids);
+          setAsks(data.asks);
+          setSource("apex");
 
-            try {
-              cleanupFn = subscribeProtocolOrderBook(
-                connection,
-                marketSymbol,
-                (update) => {
-                  if (cancelled) return;
-                  setBids(update.bids);
-                  setAsks(update.asks);
-                  setSource("on-chain");
-                },
-              );
-            } catch {
-              // Subscription failed; keep the snapshot we already have.
-            }
-          } else {
-            // The account exists but has no resting orders yet.
-            startReferenceFeed();
-          }
+          pollTimer = setInterval(() => {
+            void fetchProtocolOrderBook(connection, marketSymbol)
+              .then((update) => {
+                if (cancelled) return;
+                setBids(update.bids);
+                setAsks(update.asks);
+                setSource("apex");
+              })
+              .catch(() => {});
+          }, 5_000);
         })
         .catch(() => {
-          // Market/order book account not present on this network.
-          if (!cancelled) startReferenceFeed();
+          // Keep the ApeX book unavailable when its on-chain account is missing.
         });
     } catch {
-      // getMarketPdas threw (env not configured) — go straight to reference.
-      startReferenceFeed();
+      // Protocol configuration is missing; don't label external depth as ApeX liquidity.
     }
 
     return () => {
       cancelled = true;
+      if (pollTimer) clearInterval(pollTimer);
       cleanupFn?.();
     };
-  }, [connection, marketSymbol, preferOnChain]);
+  }, [connection, marketSymbol, selectedSource]);
 
   return { bids, asks, source };
 }

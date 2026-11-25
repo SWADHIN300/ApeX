@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ExternalLink, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { ExternalLink, Loader2, CheckCircle2, XCircle, FlaskConical } from "lucide-react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { getAssociatedTokenAddress } from "@solana/spl-token";
 import { useMarket } from "@/contexts/MarketContext";
 import { useTrade } from "@/contexts/TradeContext";
 import { useNetwork } from "@/contexts/WalletProvider";
-import { placeProtocolOrder } from "@/lib/apexProtocol";
+import { usePaperTrading } from "@/contexts/PaperTradingContext";
+import { getMarketBaseMint, openProtocolPosition, placeProtocolOrder } from "@/lib/apexProtocol";
 import { MAX_LEVERAGE, TxStatus } from "@/lib/constants";
 
 type Side = "Long" | "Short";
@@ -19,7 +21,12 @@ export default function OrderForm() {
   const { connected, publicKey, sendTransaction } = useWallet();
   const { network } = useNetwork();
   const { market } = useMarket();
+  const marketSymbol = market?.symbol;
   const { portfolio, placeOrder } = useTrade();
+  const { isPaperTrading, paperPortfolio, placePaperOrder } = usePaperTrading();
+
+  // In paper mode, use the virtual portfolio
+  const activePortfolio = isPaperTrading ? paperPortfolio : portfolio;
 
   const [side, setSide] = useState<Side>("Long");
   const [orderType, setOrderType] = useState<OrderType>("Market");
@@ -29,6 +36,10 @@ export default function OrderForm() {
   const [txStatus, setTxStatus] = useState<TxStatus>("idle");
   const [orderError, setOrderError] = useState("");
   const [orderSignature, setOrderSignature] = useState("");
+  const [walletCollateralBalance, setWalletCollateralBalance] = useState(0);
+  const [isLoadingWalletCollateral, setIsLoadingWalletCollateral] = useState(false);
+  const directDevnetMarketOrder =
+    !isPaperTrading && network === "devnet" && orderType === "Market";
 
   const orderTypes: OrderType[] = ["Market", "Limit", "Stop"];
 
@@ -44,6 +55,40 @@ export default function OrderForm() {
     return () => window.removeEventListener("apex:select-price", handleSelectPrice);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!directDevnetMarketOrder || !connected || !publicKey || !marketSymbol) {
+      return;
+    }
+
+    const loadBalance = async () => {
+      setIsLoadingWalletCollateral(true);
+      try {
+        const mint = getMarketBaseMint(marketSymbol, network);
+        const tokenAccount = await getAssociatedTokenAddress(mint, publicKey);
+        const accountInfo = await connection.getAccountInfo(tokenAccount);
+        if (!accountInfo) {
+          if (!cancelled) setWalletCollateralBalance(0);
+          return;
+        }
+        const balance = await connection.getTokenAccountBalance(tokenAccount);
+        if (!cancelled) {
+          setWalletCollateralBalance(Number(balance.value.uiAmountString ?? 0));
+        }
+      } catch {
+        if (!cancelled) setWalletCollateralBalance(0);
+      } finally {
+        if (!cancelled) setIsLoadingWalletCollateral(false);
+      }
+    };
+
+    void loadBalance();
+    return () => {
+      cancelled = true;
+    };
+  }, [connection, connected, directDevnetMarketOrder, marketSymbol, network, orderSignature, publicKey]);
+
   const sizeUsdc = parseFloat(sizeInput.replace(/,/g, "")) || 0;
   const effectivePrice =
     orderType === "Market"
@@ -53,18 +98,36 @@ export default function OrderForm() {
   
   const marginReq = sizeUsdc / leverage;
   const fee = sizeUsdc * 0.0004; // 0.04%
+  const availableCollateral = directDevnetMarketOrder
+    ? walletCollateralBalance
+    : activePortfolio.availableMargin;
+  const isCollateralLoading = directDevnetMarketOrder && isLoadingWalletCollateral;
+  const availableLabel = directDevnetMarketOrder ? "Wallet collateral" : "Available margin";
   const liqPrice =
     side === "Long"
       ? price * (1 - 1 / leverage + 0.005)
       : price * (1 + 1 / leverage - 0.005);
 
   const initiateOrder = () => {
+    if (sizeUsdc <= 0 || !market) return;
+
+    // Paper trading mode: instant simulated fill, no wallet needed
+    if (isPaperTrading) {
+      placePaperOrder(market.symbol, side, sizeUsdc, leverage, price);
+      setTxStatus("confirmed");
+      setOrderError("");
+      setOrderSignature("");
+      setSizeInput("");
+      setTimeout(() => {
+        setTxStatus((prev) => prev === "confirmed" ? "idle" : prev);
+      }, 3000);
+      return;
+    }
+
     if (!connected || !publicKey) {
       setOrderError("Connect your Solana wallet before placing an on-chain order.");
       return;
     }
-
-    if (sizeUsdc <= 0 || !market) return;
 
     setTxStatus("confirming");
     setOrderError("");
@@ -78,16 +141,28 @@ export default function OrderForm() {
     setOrderError("");
 
     try {
-      const signature = await placeProtocolOrder({
-        connection,
-        publicKey,
-        sendTransaction,
-        pair: market.symbol,
-        side,
-        price,
-        sizeUsdc,
-        leverage,
-      });
+      const signature = directDevnetMarketOrder
+        ? await openProtocolPosition({
+            connection,
+            publicKey,
+            sendTransaction,
+            pair: market.symbol,
+            side,
+            collateral: marginReq,
+            leverage,
+            referencePrice: price,
+            network,
+          })
+        : await placeProtocolOrder({
+            connection,
+            publicKey,
+            sendTransaction,
+            pair: market.symbol,
+            side,
+            price,
+            sizeUsdc,
+            leverage,
+          });
 
       setTxStatus("submitted");
       setOrderSignature(signature);
@@ -114,10 +189,9 @@ export default function OrderForm() {
     txStatus === "confirming" ||
     txStatus === "signing" ||
     txStatus === "submitted" ||
-    !connected ||
-    !publicKey ||
+    (!isPaperTrading && (!connected || !publicKey)) ||
     sizeUsdc <= 0 ||
-    marginReq > portfolio.availableMargin;
+    marginReq > availableCollateral;
   const explorerCluster = network === "devnet" ? "?cluster=devnet" : "";
 
   return (
@@ -139,6 +213,12 @@ export default function OrderForm() {
               <div className="flex justify-between t-body-sm">
                 <span className="text-text-muted">Size</span>
                 <span className="text-text-main">{sizeUsdc.toFixed(2)} USDC</span>
+              </div>
+              <div className="flex justify-between t-body-sm">
+                <span className="text-text-muted">Collateral</span>
+                <span className="text-text-main">
+                  {marginReq.toFixed(2)} USDC {directDevnetMarketOrder ? "from wallet" : "required"}
+                </span>
               </div>
               <div className="flex justify-between t-body-sm">
                 <span className="text-text-muted">Est. Fee</span>
@@ -166,45 +246,67 @@ export default function OrderForm() {
       )}
 
       {/* Long / Short toggle */}
-      <div className="flex bg-bg-l1 p-1 gap-1 mb-6 rounded-md">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-semibold tracking-tight text-text-main">Order entry</h2>
+          <p className="mt-0.5 text-[10px] font-mono text-text-muted">{market?.symbol ?? "Perpetual market"}</p>
+        </div>
+        <span className="text-[9px] font-mono uppercase tracking-wider text-text-muted">
+          {isPaperTrading ? "Simulated" : "Wallet"}
+        </span>
+      </div>
+
+      <div className="mb-4 grid grid-cols-2 gap-1 border border-t-border bg-bg-l1 p-1">
         <button
+          type="button"
+          aria-pressed={side === "Long"}
           onClick={() => setSide("Long")}
-          className={`flex-1 py-2 t-label-caps transition-all rounded-sm ${
+          className={`min-h-10 px-2 text-xs font-semibold tracking-wide transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary ${
             side === "Long"
-              ? "gradient-long glow-long text-white shadow-md"
+              ? "bg-long/15 text-long"
               : "text-text-dim hover:text-text-main hover:bg-bg-l2"
           }`}
         >
-          LONG
+          Buy / Long
         </button>
         <button
+          type="button"
+          aria-pressed={side === "Short"}
           onClick={() => setSide("Short")}
-          className={`flex-1 py-2 t-label-caps transition-all rounded-sm ${
+          className={`min-h-10 px-2 text-xs font-semibold tracking-wide transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary ${
             side === "Short"
-              ? "gradient-short glow-short text-white shadow-md"
+              ? "bg-short/15 text-short"
               : "text-text-dim hover:text-text-main hover:bg-bg-l2"
           }`}
         >
-          SHORT
+          Sell / Short
         </button>
       </div>
 
       {/* Order type tabs */}
-      <div className="flex gap-4 bb-thin mb-4">
+      <div className="mb-4 flex gap-1 border-b border-t-border px-1">
         {orderTypes.map((t) => (
           <button
             key={t}
+            type="button"
+            aria-pressed={orderType === t}
             onClick={() => setOrderType(t)}
-            className={`t-label-caps pb-2 transition-colors ${
+            className={`min-h-9 border-b-2 px-2 text-[10px] font-mono font-semibold uppercase tracking-wider transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${
               orderType === t
-                ? "text-text-main border-b-2 border-primary"
-                : "text-text-muted hover:text-text-main"
+                ? "border-primary text-text-main"
+                : "border-transparent text-text-muted hover:text-text-main"
             }`}
           >
             {t}
           </button>
         ))}
       </div>
+
+      {directDevnetMarketOrder && (
+        <p className="-mt-2 mb-3 text-[10px] leading-relaxed text-text-muted">
+          Market positions use collateral in your wallet. Limit and stop orders use deposited protocol margin.
+        </p>
+      )}
 
       {/* Price input (for Limit and Stop orders) */}
       {orderType !== "Market" && (
@@ -220,6 +322,7 @@ export default function OrderForm() {
           <div className="relative">
             <input
               type="text"
+              aria-label={orderType === "Limit" ? "Limit price in USDC" : "Trigger price in USDC"}
               value={priceInput}
               onChange={(e) => setPriceInput(e.target.value)}
               placeholder={market?.price ? market.price.toFixed(2) : "0.00"}
@@ -237,28 +340,31 @@ export default function OrderForm() {
         <div className="flex justify-between gap-3 mb-1">
           <span className="t-label-caps text-text-muted shrink-0">Size</span>
           <span className="t-label-caps text-text-muted truncate">
-            Avail: {portfolio.availableMargin.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC
+            {availableLabel}: {isCollateralLoading ? "Loading…" : availableCollateral.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC
           </span>
         </div>
         <div className="relative">
           <input
             type="text"
+            aria-label="Order size in USDC"
             value={sizeInput}
             onChange={(e) => setSizeInput(e.target.value)}
             placeholder="0.00"
-            className="w-full bg-bg-l2 border border-t-border focus:border-primary focus:ring-1 focus:ring-primary p-3 t-data-md text-text-main outline-none rounded-md transition-all"
+            className="w-full bg-bg-l2 border border-t-border focus:border-primary focus:ring-1 focus:ring-primary p-3 t-data-md text-text-main outline-none transition-all"
           />
           <span className="absolute right-3 top-1/2 -translate-y-1/2 t-data-sm text-text-muted">
             USDC
           </span>
         </div>
-        <div className="flex justify-between mt-2">
+        <div className="mt-2 grid grid-cols-4 gap-1">
            {/* Percentage quick selects */}
            {[25, 50, 75, 100].map(pct => (
              <button
                key={pct}
-               onClick={() => setSizeInput(((portfolio.availableMargin * leverage * pct) / 100).toFixed(2))}
-               className="t-label-caps text-text-muted hover:text-text-main transition-colors"
+               type="button"
+               aria-label={`Set order size to ${pct}% of ${directDevnetMarketOrder ? "wallet collateral" : "available margin"}`}
+               onClick={() => setSizeInput(((availableCollateral * leverage * pct) / 100).toFixed(2))}
+               className="border border-t-border-soft bg-bg-l1 py-1.5 text-[10px] font-mono text-text-muted transition-colors hover:border-primary/50 hover:text-text-main focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
              >
                {pct}%
              </button>
@@ -267,13 +373,14 @@ export default function OrderForm() {
       </div>
 
       {/* Leverage slider */}
-      <div className="mb-6">
+      <div className="mb-5 border-t border-t-border pt-3">
         <div className="flex justify-between mb-2">
           <span className="t-label-caps text-text-muted">Leverage</span>
           <span className="t-data-sm text-primary">{leverage.toFixed(1)}x</span>
         </div>
         <input
           type="range"
+          aria-label="Leverage"
           min="1"
           max={MAX_LEVERAGE}
           step="1"
@@ -286,10 +393,12 @@ export default function OrderForm() {
           {LEVERAGE_PRESETS.map((lev) => (
             <button
               key={lev}
+              type="button"
+              aria-pressed={leverage === lev}
               onClick={() => setLeverage(lev)}
               className={`flex-1 py-1.5 t-data-sm transition-all rounded-sm ${
                 leverage === lev
-                  ? "gradient-primary glow-primary border-transparent text-white"
+                  ? "bg-primary/15 border border-primary/40 text-primary font-semibold"
                   : "bg-bg-l2 border border-t-border-soft text-text-muted hover:bg-bg-l3"
               }`}
             >
@@ -300,18 +409,24 @@ export default function OrderForm() {
       </div>
 
       {/* Summary box */}
-      <div className="bg-bg-l2 border border-t-border p-3 space-y-2 mb-6 rounded-md shadow-sm">
-        <div className="flex justify-between t-data-sm">
-          <span className="text-text-muted">Liq. Price</span>
-          <span className="text-text-main">${liqPrice > 0 ? liqPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "---"}</span>
+      <div className="mb-4 border-y border-t-border bg-bg-l1 px-3 py-2.5">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-text-muted">Order summary</span>
+          <span className="text-[10px] font-mono text-text-dim">{leverage}x</span>
         </div>
-        <div className="flex justify-between t-data-sm">
-          <span className="text-text-muted">Fees (0.04%)</span>
-          <span className="text-text-main">{fee > 0 ? fee.toFixed(2) : "0.00"} USDC</span>
-        </div>
-        <div className="flex justify-between t-data-sm">
-          <span className="text-text-muted">Margin Req.</span>
-          <span className="text-text-main">{marginReq > 0 ? marginReq.toFixed(2) : "0.00"} USDC</span>
+        <div className="space-y-2">
+          <div className="flex justify-between t-data-sm">
+            <span className="text-text-muted">Liq. Price</span>
+            <span className="text-text-main">${liqPrice > 0 ? liqPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "---"}</span>
+          </div>
+          <div className="flex justify-between t-data-sm">
+            <span className="text-text-muted">Fees (0.04%)</span>
+            <span className="text-text-main">{fee > 0 ? fee.toFixed(2) : "0.00"} USDC</span>
+          </div>
+          <div className="flex justify-between t-data-sm">
+            <span className="text-text-muted">Margin Req.</span>
+            <span className="text-text-main">{marginReq > 0 ? marginReq.toFixed(2) : "0.00"} USDC</span>
+          </div>
         </div>
       </div>
 
@@ -330,9 +445,17 @@ export default function OrderForm() {
           <span className="flex-1">
             {txStatus === "signing" && "Awaiting Wallet Signature..."}
             {txStatus === "submitted" && "Transaction Submitted..."}
-            {txStatus === "confirmed" && "Order Confirmed!"}
+            {txStatus === "confirmed" &&
+              (isPaperTrading
+                ? "Paper Order Filled (Simulated)"
+                : directDevnetMarketOrder
+                  ? "Devnet Position Opened"
+                  : "Order Confirmed!")}
             {txStatus === "failed" && (orderError || "Transaction Failed")}
           </span>
+          {isPaperTrading && txStatus === "confirmed" && (
+            <FlaskConical size={14} className="shrink-0 opacity-70" />
+          )}
         </div>
       )}
 
@@ -351,17 +474,35 @@ export default function OrderForm() {
       <button
         onClick={initiateOrder}
         disabled={isOrderDisabled}
-        className={`w-full py-4 text-white t-headline-md uppercase hover:opacity-90 active:scale-[0.98] transition-all shadow-lg rounded-md disabled:opacity-50 disabled:cursor-not-allowed ${
-          side === "Long" ? "gradient-long glow-long" : "gradient-short glow-short"
+        className={`w-full min-h-12 py-3 text-sm font-semibold uppercase tracking-wide text-white transition-colors hover:brightness-110 active:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed ${
+          side === "Long" ? "bg-long" : "bg-short"
         }`}
       >
-        {connected ? `Place ${side} Order` : "Connect Wallet to Place Order"}
+        {isPaperTrading
+          ? `Paper ${side}`
+          : connected
+            ? `${side === "Long" ? "Buy / Long" : "Sell / Short"}`
+            : "Connect Wallet to Place Order"}
       </button>
 
+      {/* Paper mode badge */}
+      {isPaperTrading && (
+        <div className="mt-3 flex items-center justify-center gap-2 t-body-sm text-amber-400 bg-amber-400/10 border border-amber-400/30 rounded-md p-2">
+          <FlaskConical size={14} />
+          <span>Paper Trading — no real funds used</span>
+        </div>
+      )}
+
       {/* Insufficient Margin Warning */}
-      {connected && sizeUsdc > 0 && marginReq > portfolio.availableMargin && (
+      {((isPaperTrading && sizeUsdc > 0) || (connected && sizeUsdc > 0)) && marginReq > availableCollateral && (
         <div className="mt-3 text-center t-body-sm text-short bg-short/10 border border-short/40 rounded-md p-2">
-          Insufficient Margin. Please deposit USDC in the <a href="/accounts" className="underline font-bold">Accounts</a> tab.
+          {directDevnetMarketOrder ? (
+            <>
+              Insufficient wallet collateral. Get Devnet collateral in <a href="/swap" className="underline font-bold">Swap</a> or switch to a limit order after depositing it in <a href="/accounts" className="underline font-bold">Accounts</a>.
+            </>
+          ) : (
+            <>Insufficient margin. Please deposit USDC in the <a href="/accounts" className="underline font-bold">Accounts</a> tab.</>
+          )}
         </div>
       )}
     </section>

@@ -18,10 +18,12 @@ import {
   Settings,
   TrendingUp,
   TrendingDown,
+  FlaskConical,
 } from "lucide-react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import CoinIcon from "./CoinIcon";
 import { useClientMounted } from "@/hooks/useLocalStorageState";
+import { usePaperTrading } from "@/contexts/PaperTradingContext";
 
 function CustomWalletButton() {
   const { connected } = useWallet();
@@ -66,6 +68,12 @@ export default function TopBar({
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
   const { network, setNetwork } = useNetwork();
+  const {
+    isPaperTrading,
+    setPaperTrading,
+    paperAccountLoading,
+    paperAccountError,
+  } = usePaperTrading();
   const mounted = useClientMounted();
   const pathname = usePathname();
 
@@ -430,6 +438,36 @@ export default function TopBar({
           <div className="hidden sm:flex items-center gap-2 ml-2">
             {mounted && (
               <>
+                {/* Paper Trading Toggle (devnet only) */}
+                {network === "devnet" && (
+                  <button
+                    onClick={() => void setPaperTrading(!isPaperTrading)}
+                    disabled={paperAccountLoading}
+                    className={`h-8 px-3 flex items-center justify-center gap-1.5 t-label-caps transition-all duration-200`}
+                    style={{
+                      fontSize: "10px",
+                      border: isPaperTrading
+                        ? "1px solid rgba(251, 191, 36, 0.5)"
+                        : "0.5px solid var(--border)",
+                      borderRadius: "4px",
+                      background: isPaperTrading
+                        ? "rgba(251, 191, 36, 0.12)"
+                        : "var(--bg-l2)",
+                      color: isPaperTrading
+                        ? "rgb(251, 191, 36)"
+                        : undefined,
+                    }}
+                    title={isPaperTrading ? "Paper trading ON — click to disable" : "Start or restore a wallet-linked paper account with virtual funds"}
+                  >
+                    <FlaskConical size={12} />
+                    {paperAccountLoading ? "Saving…" : isPaperTrading ? "PAPER" : "Paper"}
+                  </button>
+                )}
+                {paperAccountError && network === "devnet" && (
+                  <span className="max-w-48 text-[10px] leading-tight text-red-400" role="status">
+                    {paperAccountError}
+                  </span>
+                )}
                 <button
                   onClick={() => setNetwork(network === "devnet" ? "mainnet-beta" : "devnet")}
                   className="h-8 px-3 flex items-center justify-center t-label-caps text-text-muted

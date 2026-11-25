@@ -9,7 +9,6 @@ import {
   fetchSpotMarket,
   fetchSpotOrderBook,
   getSpotMarketPda,
-  subscribeSpotOrderBook,
   type DecodedSpotMarket,
   type SpotBalances,
   type SpotOpenOrder,
@@ -115,7 +114,7 @@ export function useSpotMarket(config: SpotMarketConfigEntry | null): UseSpotMark
 
   useEffect(() => {
     let cancelled = false;
-    let unsubscribe: (() => void) | undefined;
+    let pollTimer: ReturnType<typeof setInterval> | undefined;
 
     const load = async () => {
       if (!config || !mints) {
@@ -177,20 +176,6 @@ export function useSpotMarket(config: SpotMarketConfigEntry | null): UseSpotMark
         const allOrders = [...book.rawBids, ...book.rawAsks];
         setOpenOrders(userKey ? allOrders.filter((o) => o.owner === userKey) : []);
 
-        unsubscribe = subscribeSpotOrderBook(
-          connection,
-          pda,
-          baseDec,
-          (update) => {
-            if (cancelled) return;
-            setBids(update.bids);
-            setAsks(update.asks);
-            const currentKey = publicKey?.toBase58();
-            const liveOrders = [...update.rawBids, ...update.rawAsks];
-            setOpenOrders(currentKey ? liveOrders.filter((o) => o.owner === currentKey) : []);
-          },
-        );
-
         if (publicKey) {
           const traderBalances = await fetchSpotBalances(
             connection,
@@ -203,6 +188,33 @@ export function useSpotMarket(config: SpotMarketConfigEntry | null): UseSpotMark
         } else {
           setBalances({ baseFree: 0, baseLocked: 0, quoteFree: 0, quoteLocked: 0 });
         }
+
+        pollTimer = setInterval(() => {
+          void (async () => {
+            try {
+              const latestBook = await fetchSpotOrderBook(connection, pda, baseDec);
+              if (cancelled) return;
+              setBids(latestBook.bids);
+              setAsks(latestBook.asks);
+              const currentKey = publicKey?.toBase58();
+              const liveOrders = [...latestBook.rawBids, ...latestBook.rawAsks];
+              setOpenOrders(currentKey ? liveOrders.filter((o) => o.owner === currentKey) : []);
+
+              if (publicKey) {
+                const latestBalances = await fetchSpotBalances(
+                  connection,
+                  pda,
+                  publicKey,
+                  baseDec,
+                  quoteDec,
+                );
+                if (!cancelled) setBalances(latestBalances);
+              }
+            } catch {
+              // Keep the most recent order book and balances during RPC hiccups.
+            }
+          })();
+        }, 5_000);
       } catch (err) {
         if (!cancelled) setError((err as Error).message);
       } finally {
@@ -214,7 +226,7 @@ export function useSpotMarket(config: SpotMarketConfigEntry | null): UseSpotMark
 
     return () => {
       cancelled = true;
-      unsubscribe?.();
+      if (pollTimer) clearInterval(pollTimer);
     };
   }, [connection, mints, config, publicKey, reloadToken]);
 

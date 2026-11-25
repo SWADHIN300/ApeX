@@ -9,7 +9,12 @@ import {
   Transaction,
   TransactionInstruction,
 } from "@solana/web3.js";
-import { getAssociatedTokenAddress, getMint, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import {
+  createAssociatedTokenAccountIdempotentInstruction,
+  getAssociatedTokenAddress,
+  getMint,
+  TOKEN_PROGRAM_ID,
+} from "@solana/spl-token";
 import type { OrderBookLevel } from "./types";
 import {
   DEFAULT_FEE_RATE_BPS,
@@ -39,6 +44,9 @@ const DEFAULT_APEX_PROTOCOL_PROGRAM_ID =
   "D643vETCKW14hgvpmUoWZTYi65R9tijNm1RGmZFfS6g1";
 const PLACE_ORDER_DISCRIMINATOR = Buffer.from([
   51, 194, 155, 175, 109, 130, 96, 106,
+]);
+const OPEN_POSITION_DISCRIMINATOR = Buffer.from([
+  135, 128, 47, 77, 15, 152, 240, 49,
 ]);
 const INITIALIZE_MARKET_DISCRIMINATOR = Buffer.from([
   35, 35, 189, 193, 155, 48, 170, 203,
@@ -74,15 +82,11 @@ function getConfiguredMarketMints() {
 
 export function getMarketBaseMint(pair: string, network?: "devnet" | "mainnet-beta") {
   const mintMap = getConfiguredMarketMints();
-  const mappedMint = mintMap[pair];
-
-  if (mappedMint) return new PublicKey(mappedMint);
-
-  // If on devnet, prefer the devnet-specific mint
-  const isDevnet =
-    network === "devnet" ||
-    (typeof window !== "undefined" &&
-      localStorage.getItem("apex-network") === "devnet");
+  // Use the explicit Devnet collateral mint before any shared market mapping.
+  const isDevnet = network
+    ? network === "devnet"
+    : typeof window !== "undefined" &&
+      localStorage.getItem("apex-network") === "devnet";
 
   if (isDevnet) {
     const devnetMint =
@@ -90,6 +94,9 @@ export function getMarketBaseMint(pair: string, network?: "devnet" | "mainnet-be
       process.env.NEXT_PUBLIC_APEX_DEVNET_USDC_MINT;
     if (devnetMint) return new PublicKey(devnetMint);
   }
+
+  const mappedMint = mintMap[pair];
+  if (mappedMint) return new PublicKey(mappedMint);
 
   const fallbackMint = process.env.NEXT_PUBLIC_APEX_BASE_MINT;
   if (fallbackMint) return new PublicKey(fallbackMint);
@@ -99,9 +106,9 @@ export function getMarketBaseMint(pair: string, network?: "devnet" | "mainnet-be
   );
 }
 
-export function getMarketPdas(pair: string) {
+export function getMarketPdas(pair: string, network?: "devnet" | "mainnet-beta") {
   const programId = getApexProtocolProgramId();
-  const baseMint = getMarketBaseMint(pair);
+  const baseMint = getMarketBaseMint(pair, network);
   const [market] = PublicKey.findProgramAddressSync(
     [Buffer.from("market"), baseMint.toBuffer()],
     programId,
@@ -127,6 +134,21 @@ export function getTraderMarginPda(market: PublicKey, owner: PublicKey) {
 function readMarketVault(data: Buffer) {
   const vaultOffset = 8 + 32 + 32;
   return new PublicKey(data.subarray(vaultOffset, vaultOffset + 32));
+}
+
+function readMarketOracle(data: Buffer) {
+  const oracleOffset = 8 + 32;
+  return new PublicKey(data.subarray(oracleOffset, oracleOffset + 32));
+}
+
+function getConfiguredOracle() {
+  const oracleAddress = process.env.NEXT_PUBLIC_APEX_ORACLE;
+  if (!oracleAddress) {
+    throw new Error(
+      "NEXT_PUBLIC_APEX_ORACLE is not configured. An oracle address is required to initialize a market.",
+    );
+  }
+  return new PublicKey(oracleAddress);
 }
 
 function readProtocolOrder(data: Buffer, offset: number) {
@@ -329,14 +351,7 @@ function createInitializeMarketInstruction({
   // Never auto-create a market with a non-oracle default: an unset/SystemProgram
   // "oracle" makes every open/close/liquidate revert and, because the PDA is
   // keyed by base mint, a wrong-signer init can also lock out the real deployer.
-  const oracleEnv = process.env.NEXT_PUBLIC_APEX_ORACLE;
-  if (!oracleEnv) {
-    throw new Error(
-      "NEXT_PUBLIC_APEX_ORACLE is not configured. A Pyth oracle address is required " +
-        "to initialize a market and to place orders.",
-    );
-  }
-  const oracle = new PublicKey(oracleEnv);
+  const oracle = getConfiguredOracle();
   const data = Buffer.alloc(48);
   INITIALIZE_MARKET_DISCRIMINATOR.copy(data, 0);
   writeU64LE(data, BigInt(DEFAULT_FEE_RATE_BPS), 8);
@@ -399,6 +414,54 @@ function createPlaceOrderInstruction({
       { pubkey: marginAccount, isSigner: false, isWritable: true },
       { pubkey: vault, isSigner: false, isWritable: true },
       { pubkey: traderTokenAccount, isSigner: false, isWritable: true },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data,
+  });
+}
+
+function createOpenPositionInstruction({
+  programId,
+  trader,
+  market,
+  position,
+  vault,
+  traderTokenAccount,
+  oracle,
+  side,
+  collateral,
+  leverage,
+  priceLimit,
+}: {
+  programId: PublicKey;
+  trader: PublicKey;
+  market: PublicKey;
+  position: PublicKey;
+  vault: PublicKey;
+  traderTokenAccount: PublicKey;
+  oracle: PublicKey;
+  side: "Long" | "Short";
+  collateral: bigint;
+  leverage: number;
+  priceLimit: bigint;
+}) {
+  const data = Buffer.alloc(26);
+  OPEN_POSITION_DISCRIMINATOR.copy(data, 0);
+  data.writeUInt8(side === "Long" ? 0 : 1, 8);
+  writeU64LE(data, collateral, 9);
+  data.writeUInt8(leverage, 17);
+  writeU64LE(data, priceLimit, 18);
+
+  return new TransactionInstruction({
+    programId,
+    keys: [
+      { pubkey: trader, isSigner: true, isWritable: true },
+      { pubkey: market, isSigner: false, isWritable: true },
+      { pubkey: position, isSigner: false, isWritable: true },
+      { pubkey: vault, isSigner: false, isWritable: true },
+      { pubkey: traderTokenAccount, isSigner: false, isWritable: true },
+      { pubkey: oracle, isSigner: false, isWritable: false },
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
@@ -481,16 +544,18 @@ async function getMarketVaultForTransaction({
   connection,
   publicKey,
   pair,
+  network,
   transaction,
   signers,
 }: {
   connection: Connection;
   publicKey: PublicKey;
   pair: string;
+  network?: "devnet" | "mainnet-beta";
   transaction: Transaction;
   signers: Keypair[];
 }) {
-  const { programId, baseMint, market, orderBook } = getMarketPdas(pair);
+  const { programId, baseMint, market, orderBook } = getMarketPdas(pair, network);
   const marketAccount = await connection.getAccountInfo(market);
   const orderBookAccount = await connection.getAccountInfo(orderBook);
 
@@ -507,10 +572,24 @@ async function getMarketVaultForTransaction({
         vault: vaultKeypair.publicKey,
       }),
     );
-    return { programId, baseMint, market, orderBook, vault: vaultKeypair.publicKey };
+    return {
+      programId,
+      baseMint,
+      market,
+      orderBook,
+      vault: vaultKeypair.publicKey,
+      oracle: getConfiguredOracle(),
+    };
   }
 
-  return { programId, baseMint, market, orderBook, vault: readMarketVault(marketAccount.data) };
+  return {
+    programId,
+    baseMint,
+    market,
+    orderBook,
+    vault: readMarketVault(marketAccount.data),
+    oracle: readMarketOracle(marketAccount.data),
+  };
 }
 
 async function toTokenAmount(connection: Connection, mint: PublicKey, amount: number) {
@@ -688,6 +767,93 @@ export async function closeProtocolPosition({
   await connection.confirmTransaction(signature, "confirmed");
   return signature;
 }
+
+export async function openProtocolPosition({
+  connection,
+  publicKey,
+  sendTransaction,
+  pair,
+  side,
+  collateral,
+  leverage,
+  referencePrice,
+  network,
+}: {
+  connection: Connection;
+  publicKey: PublicKey;
+  sendTransaction: SendTransaction;
+  pair: string;
+  side: "Long" | "Short";
+  collateral: number;
+  leverage: number;
+  referencePrice: number;
+  network: "devnet" | "mainnet-beta";
+}) {
+  if (collateral <= 0 || referencePrice <= 0) {
+    throw new Error("Enter a valid collateral amount and market price.");
+  }
+
+  const transaction = new Transaction();
+  const signers: Keypair[] = [];
+  const { programId, baseMint, market, vault, oracle } =
+    await getMarketVaultForTransaction({
+      connection,
+      publicKey,
+      pair,
+      network,
+      transaction,
+      signers,
+    });
+  const [position] = PublicKey.findProgramAddressSync(
+    [Buffer.from("position"), market.toBuffer(), publicKey.toBuffer()],
+    programId,
+  );
+  const traderTokenAccount = await getAssociatedTokenAddress(baseMint, publicKey);
+  const rawCollateral = await toTokenAmount(connection, baseMint, collateral);
+  const maxSlippage = 0.05;
+  const guardedPrice =
+    side === "Long"
+      ? referencePrice * (1 + maxSlippage)
+      : referencePrice * (1 - maxSlippage);
+  const priceLimit = toProtocolAmount(guardedPrice, PRICE_DECIMALS);
+
+  transaction.add(
+    createAssociatedTokenAccountIdempotentInstruction(
+      publicKey,
+      traderTokenAccount,
+      publicKey,
+      baseMint,
+    ),
+    createOpenPositionInstruction({
+      programId,
+      trader: publicKey,
+      market,
+      position,
+      vault,
+      traderTokenAccount,
+      oracle,
+      side,
+      collateral: rawCollateral,
+      leverage,
+      priceLimit,
+    }),
+  );
+
+  if (signers.length > 0) {
+    const { blockhash } = await connection.getLatestBlockhash("confirmed");
+    transaction.recentBlockhash = blockhash;
+    transaction.feePayer = publicKey;
+    transaction.partialSign(...signers);
+  }
+
+  const signature = await sendTransaction(transaction, connection, {
+    skipPreflight: false,
+    signers,
+  });
+  await connection.confirmTransaction(signature, "confirmed");
+  return signature;
+}
+
 export function getPendingPayoutPda(market: PublicKey, owner: PublicKey) {
   const programId = getApexProtocolProgramId();
   const [pendingPayout] = PublicKey.findProgramAddressSync(

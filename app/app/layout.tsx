@@ -4,6 +4,7 @@ import { SettingsProvider } from "@/contexts/SettingsContext";
 import { MarketProvider } from "@/contexts/MarketContext";
 import { TradeProvider } from "@/contexts/TradeContext";
 import { WalletProvider } from "@/contexts/WalletProvider";
+import { PaperTradingProvider } from "@/contexts/PaperTradingContext";
 
 export const metadata: Metadata = {
   title: "ApeX | Perpetual Trading Terminal",
@@ -26,7 +27,9 @@ export default function RootLayout({
         <WalletProvider>
           <SettingsProvider>
             <MarketProvider>
-              <TradeProvider>{children}</TradeProvider>
+              <TradeProvider>
+                <PaperTradingProvider>{children}</PaperTradingProvider>
+              </TradeProvider>
             </MarketProvider>
           </SettingsProvider>
         </WalletProvider>

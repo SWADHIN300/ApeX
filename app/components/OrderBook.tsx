@@ -3,6 +3,14 @@
 import { useState } from "react";
 import { useOrderBook } from "@/hooks/useOrderBook";
 import { useMarket } from "@/contexts/MarketContext";
+import type { ExchangeName } from "@/lib/exchanges";
+
+const BOOK_SOURCES: { id: ExchangeName; label: string }[] = [
+  { id: "apex", label: "ApeX" },
+  { id: "binance", label: "Binance" },
+  { id: "coinbase", label: "Coinbase" },
+  { id: "kraken", label: "Kraken" },
+];
 
 const fmtPrice = (p: number) =>
   p.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -18,10 +26,15 @@ interface OrderBookProps {
 }
 
 export default function OrderBook({ onSelectPrice }: OrderBookProps = {}) {
-  // Default to the protocol's own book; users can switch to the reference feed.
-  const [preferOnChain, setPreferOnChain] = useState(true);
-  const { bids, asks, source } = useOrderBook(preferOnChain);
+  const [bookSource, setBookSource] = useState<ExchangeName>("binance");
+  const { bids, asks, source } = useOrderBook(bookSource);
   const { market } = useMarket();
+  const sourceLabel =
+    source === "unavailable"
+      ? "unavailable"
+      : source === "apex"
+        ? "on-chain"
+        : source;
 
   const handleSelectPrice = (p: number) => {
     onSelectPrice?.(p);
@@ -72,64 +85,48 @@ export default function OrderBook({ onSelectPrice }: OrderBookProps = {}) {
       : 0;
 
   return (
-    <section className="col-span-12 lg:col-span-3 xl:col-span-2 min-h-[360px] lg:min-h-0 min-w-0 b-thin lg:border-l-0 lg:border-r-0 flex flex-col bg-bg-surface overflow-hidden">
-      {/* Header — the data source is always stated explicitly, so reference
-          depth from a centralized exchange is never mistaken for ApeX liquidity. */}
+    <section className="col-span-12 lg:col-span-2 min-h-[360px] lg:min-h-0 min-w-0 b-thin lg:border-l-0 lg:border-r-0 flex flex-col bg-bg-surface overflow-hidden">
+      {/* Keep external exchange depth distinct from liquidity on ApeX. */}
       <div className="h-10 bb-thin flex items-center justify-between gap-2 px-3 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <span className="t-label-caps text-text-main whitespace-nowrap">Order Book</span>
           <span
             title={
-              source === "on-chain"
+              source === "apex"
                 ? "Live depth from the protocol's on-chain OrderBook account"
-                : source === "reference"
-                  ? "Reference depth from a centralized exchange — not tradable on ApeX"
-                  : "Waiting for depth data"
+                : source !== "unavailable"
+                  ? `External ${source} spot depth — not tradable on ApeX`
+                : "Waiting for depth data"
             }
             className={`px-1.5 py-0.5 text-[9px] font-mono font-medium uppercase tracking-wider rounded border shrink-0 ${
-              source === "on-chain"
+              source === "apex"
                 ? "bg-long/10 text-long border-long/30"
-                : source === "reference"
+                : source !== "unavailable"
                   ? "bg-bg-l3 text-text-muted border-t-border"
                   : "bg-bg-l2 text-text-dim border-t-border"
             }`}
           >
-            {source === "on-chain"
-              ? "on-chain"
-              : source === "reference"
-                ? "reference"
-                : "loading"}
+            {sourceLabel}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={() => setPreferOnChain((v) => !v)}
-          title={
-            preferOnChain
-              ? "Currently preferring ApeX's on-chain book. Click to view the reference feed."
-              : "Currently forcing the reference feed. Click to prefer ApeX's on-chain book."
-          }
-          className="t-label-caps text-text-dim hover:text-text-main transition-colors whitespace-nowrap"
+        <select
+          aria-label="Order book source"
+          value={bookSource}
+          onChange={(event) => setBookSource(event.target.value as ExchangeName)}
+          className="max-w-24 bg-bg-l2 text-text-main border border-t-border rounded-sm px-1.5 py-1 text-[10px] font-mono outline-none focus:border-accent"
         >
-          {preferOnChain ? "View ref" : "View chain"}
-        </button>
+          {BOOK_SOURCES.map(({ id, label }) => (
+            <option key={id} value={id}>{label}</option>
+          ))}
+        </select>
       </div>
-
-      {/* Empty-state notice when the protocol book has no resting orders. */}
-      {source === "reference" && preferOnChain && (
-        <div className="px-3 py-1.5 bb-thin bg-bg-l2/60 shrink-0">
-          <span className="text-[10px] font-mono text-text-muted leading-tight">
-            ApeX book is empty — showing reference depth for context.
-          </span>
-        </div>
-      )}
 
       <div className="flex-grow overflow-hidden flex flex-col" role="table" aria-label="Order Book">
         {/* Column header */}
-        <div role="row" className="grid grid-cols-[minmax(4.5rem,1fr)_minmax(3rem,0.75fr)_minmax(3rem,0.75fr)] px-3 py-2 t-label-caps text-text-dim bg-bg-l2 shrink-0">
+        <div role="row" className="grid grid-cols-[minmax(4rem,1fr)_minmax(3rem,.75fr)_minmax(3rem,.75fr)] lg:grid-cols-[minmax(3.5rem,1fr)_minmax(2.75rem,.75fr)] xl:grid-cols-[minmax(4.5rem,1fr)_minmax(3rem,.75fr)_minmax(3rem,.75fr)] px-3 py-2 lg:px-2 xl:px-3 t-label-caps text-text-dim bg-bg-l2 shrink-0 lg:text-[10px]">
           <span role="columnheader">Price</span>
           <span role="columnheader" className="text-right">Size</span>
-          <span role="columnheader" className="text-right">Total</span>
+          <span role="columnheader" className="text-right lg:hidden xl:block">Total</span>
         </div>
 
         {/* Asks (highest at top, lowest at bottom touching spread) */}
@@ -148,7 +145,7 @@ export default function OrderBook({ onSelectPrice }: OrderBookProps = {}) {
                   onClick={() => handleSelectPrice(a.price)}
                   aria-label={`Ask: $${fmtPrice(a.price)}, Size: ${fmtSize(a.size)}`}
                   title="Click to copy / select price"
-                  className="relative h-5 grid grid-cols-[minmax(4.5rem,1fr)_minmax(3rem,0.75fr)_minmax(3rem,0.75fr)] items-center px-3 t-data-sm hover:bg-bg-l3 cursor-pointer select-none transition-colors"
+                  className="relative h-5 grid grid-cols-[minmax(4rem,1fr)_minmax(3rem,.75fr)_minmax(3rem,.75fr)] lg:grid-cols-[minmax(3.5rem,1fr)_minmax(2.75rem,.75fr)] xl:grid-cols-[minmax(4.5rem,1fr)_minmax(3rem,.75fr)_minmax(3rem,.75fr)] items-center px-3 lg:px-2 xl:px-3 t-data-sm lg:text-[10px] hover:bg-bg-l3 cursor-pointer select-none transition-colors"
                 >
                   <div
                     className="absolute right-0 inset-y-0 depth-bar-ask pointer-events-none"
@@ -160,7 +157,7 @@ export default function OrderBook({ onSelectPrice }: OrderBookProps = {}) {
                   />
                   <span role="cell" className="text-short z-10 font-mono">{fmtPrice(a.price)}</span>
                   <span role="cell" className="text-right z-10 font-mono">{fmtSize(a.size)}</span>
-                  <span role="cell" className="text-right z-10 font-mono text-text-muted">
+                  <span role="cell" className="text-right z-10 font-mono text-text-muted lg:hidden xl:block">
                     {fmtTotal(a.total)}
                   </span>
                 </div>
@@ -213,7 +210,7 @@ export default function OrderBook({ onSelectPrice }: OrderBookProps = {}) {
                   onClick={() => handleSelectPrice(b.price)}
                   aria-label={`Bid: $${fmtPrice(b.price)}, Size: ${fmtSize(b.size)}`}
                   title="Click to copy / select price"
-                  className="relative h-5 grid grid-cols-[minmax(4.5rem,1fr)_minmax(3rem,0.75fr)_minmax(3rem,0.75fr)] items-center px-3 t-data-sm hover:bg-bg-l3 cursor-pointer select-none transition-colors"
+                  className="relative h-5 grid grid-cols-[minmax(4rem,1fr)_minmax(3rem,.75fr)_minmax(3rem,.75fr)] lg:grid-cols-[minmax(3.5rem,1fr)_minmax(2.75rem,.75fr)] xl:grid-cols-[minmax(4.5rem,1fr)_minmax(3rem,.75fr)_minmax(3rem,.75fr)] items-center px-3 lg:px-2 xl:px-3 t-data-sm lg:text-[10px] hover:bg-bg-l3 cursor-pointer select-none transition-colors"
                 >
                   <div
                     className="absolute right-0 inset-y-0 depth-bar-bid pointer-events-none"
@@ -225,7 +222,7 @@ export default function OrderBook({ onSelectPrice }: OrderBookProps = {}) {
                   />
                   <span role="cell" className="text-long z-10 font-mono">{fmtPrice(b.price)}</span>
                   <span role="cell" className="text-right z-10 font-mono">{fmtSize(b.size)}</span>
-                  <span role="cell" className="text-right z-10 font-mono text-text-muted">
+                  <span role="cell" className="text-right z-10 font-mono text-text-muted lg:hidden xl:block">
                     {fmtTotal(b.total)}
                   </span>
                 </div>

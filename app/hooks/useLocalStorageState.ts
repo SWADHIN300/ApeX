@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 
 const listenersByKey = new Map<string, Set<() => void>>();
 
@@ -43,14 +43,14 @@ export function useLocalStorageState<T>(
     () => null
   );
 
-  let value = initialValue;
-  if (rawValue !== null) {
+  const value = useMemo(() => {
+    if (rawValue === null) return initialValue;
     try {
-      value = parse(rawValue);
+      return parse(rawValue);
     } catch {
-      value = initialValue;
+      return initialValue;
     }
-  }
+  }, [rawValue, initialValue, parse]);
 
   const setValue = useCallback(
     (next: T | ((previous: T) => T)) => {
@@ -66,7 +66,11 @@ export function useLocalStorageState<T>(
       const nextValue = typeof next === "function"
         ? (next as (previous: T) => T)(current)
         : next;
-      window.localStorage.setItem(key, serialize(nextValue));
+      const serialized = serialize(nextValue);
+      if (rawCurrent === serialized) {
+        return;
+      }
+      window.localStorage.setItem(key, serialized);
       notifyLocalStorageChange(key);
     },
     [initialValue, key, parse, serialize]

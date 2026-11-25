@@ -2,24 +2,28 @@
 import { useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { useTrade } from '@/contexts/TradeContext'
-import { Search, Download, TrendingUp, TrendingDown } from 'lucide-react'
+import { usePaperTrading } from '@/contexts/PaperTradingContext'
+import { Search, Download, TrendingUp, TrendingDown, FlaskConical } from 'lucide-react'
 
 type FilterType = 'all' | 'wins' | 'losses'
 
 export default function HistoryPage() {
   const { trades } = useTrade()
+  const { isPaperTrading, paperTrades } = usePaperTrading()
+  const activeTrades = isPaperTrading ? paperTrades : trades
+
   const [search, setSearch]   = useState('')
   const [filter, setFilter]   = useState<FilterType>('all')
   const [page, setPage]       = useState(1)
   const PER_PAGE = 7
 
-  const totalPnl   = trades.reduce((s, t) => s + t.pnl, 0)
-  const wins       = trades.filter((t) => t.pnl >= 0).length
-  const losses     = trades.filter((t) => t.pnl < 0).length
-  const winRate    = trades.length ? ((wins / trades.length) * 100).toFixed(1) : "0.0"
-  const totalFees  = trades.reduce((s, t) => s + t.fee, 0)
+  const totalPnl   = activeTrades.reduce((s, t) => s + t.pnl, 0)
+  const wins       = activeTrades.filter((t) => t.pnl >= 0).length
+  const losses     = activeTrades.filter((t) => t.pnl < 0).length
+  const winRate    = activeTrades.length ? ((wins / activeTrades.length) * 100).toFixed(1) : "0.0"
+  const totalFees  = activeTrades.reduce((s, t) => s + t.fee, 0)
 
-  const filtered = trades
+  const filtered = activeTrades
     .filter((t) => {
       if (filter === 'wins')   return t.pnl >= 0
       if (filter === 'losses') return t.pnl < 0
@@ -34,8 +38,8 @@ export default function HistoryPage() {
   const paginated  = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE)
 
   const exportCSV = () => {
-    const headers = ['Tx ID', 'Time', 'Market', 'Side', 'Size', 'Avg Price', 'Fee', 'PnL', 'Status']
-    const rows = trades.map(t => [
+    const headers = ['Tx ID', 'Time', 'Market', 'Side', 'Size', 'Avg Price', 'Fee', 'PnL', 'Status', 'Mode']
+    const rows = activeTrades.map(t => [
       t.id,
       new Date(t.time * 1000).toLocaleString(),
       t.pair,
@@ -44,7 +48,8 @@ export default function HistoryPage() {
       t.price.toFixed(2),
       t.fee.toFixed(2),
       t.pnl.toFixed(2),
-      t.status
+      t.status,
+      t.id.startsWith("paper-") ? "Paper" : "Live"
     ])
     
     const csvContent = "data:text/csv;charset=utf-8," 
@@ -53,7 +58,7 @@ export default function HistoryPage() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "apex_trade_history.csv");
+    link.setAttribute("download", `apex_${isPaperTrading ? 'paper_' : ''}trade_history.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -65,9 +70,16 @@ export default function HistoryPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="font-ui text-headline-md text-on-surface">Trade History</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="font-ui text-headline-md text-on-surface">Trade History</h1>
+              {isPaperTrading && (
+                <span className="flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-amber-400/15 border border-amber-400/30 text-amber-400 font-medium">
+                  <FlaskConical size={12} /> PAPER TRADING
+                </span>
+              )}
+            </div>
             <p className="font-ui text-body-sm text-on-surface-variant mt-0.5">
-              {trades.length} closed trades · All time
+              {activeTrades.length} {isPaperTrading ? 'simulated' : 'closed'} trades · All time
             </p>
           </div>
           <button 
@@ -141,7 +153,14 @@ export default function HistoryPage() {
                 const isPos = t.pnl >= 0
                 return (
                   <tr key={t.id + t.time} className="hover:bg-surface-container transition-colors">
-                    <td className="px-4 py-3 font-data text-data-sm text-on-surface-variant">{t.id}</td>
+                    <td className="px-4 py-3 font-data text-data-sm text-on-surface-variant flex items-center gap-1.5">
+                      <span>{t.id}</span>
+                      {t.id.startsWith("paper-") && (
+                        <span className="text-[9px] px-1 rounded font-mono text-amber-400 bg-amber-400/15 border border-amber-400/30">
+                          SIM
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 font-data text-data-sm text-on-surface-variant whitespace-nowrap">{new Date(t.time * 1000).toLocaleString()}</td>
                     <td className="px-4 py-3 font-data text-data-md text-on-surface">{t.pair}</td>
                     <td className="px-4 py-3">

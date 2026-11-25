@@ -15,6 +15,7 @@ A high-performance perpetual futures decentralized exchange (DEX) built on Solan
 - **Autonomous Keepers**: Order matching (`match_orders`), liquidation execution (`liquidate`), and 8-hour funding rate settlements (`update_funding_rate`) are processed by the autonomous Keeper cron service located in `/keeper`.
 - **On-Chain Positions**: Open positions are mapped directly to on-chain `Position` PDAs `[b"position", market, trader]`.
 - **Data Persistence**: Trade execution history, order management, and leaderboard rankings are cached and queried via a PostgreSQL pipeline.
+- **Devnet Paper Trading**: Built-in simulated paper trading mode allows risk-free demonstrations with virtual balances and simulated fills. Wallet-linked account recovery uses a sign-in message only; no token transaction is signed. See [Paper Trading Guide](docs/PAPER_TRADING.md).
 
 ---
 
