@@ -60,7 +60,32 @@ export interface SpotOpenOrder {
 }
 
 function readU64LE(buffer: Buffer, offset: number): bigint {
-  return buffer.readBigUInt64LE(offset);
+  if (typeof buffer.readBigUInt64LE === "function") {
+    return buffer.readBigUInt64LE(offset);
+  }
+
+  let value = BigInt(0);
+  for (let i = 7; i >= 0; i -= 1) {
+    value = (value << BigInt(8)) | BigInt(buffer[offset + i]);
+  }
+  return value;
+}
+
+function writeU64LE(buffer: Buffer, value: bigint, offset: number): void {
+  if (value < BigInt(0) || value > BigInt("18446744073709551615")) {
+    throw new Error("Value is outside the u64 range.");
+  }
+
+  if (typeof buffer.writeBigUInt64LE === "function") {
+    buffer.writeBigUInt64LE(value, offset);
+    return;
+  }
+
+  let remaining = value;
+  for (let i = 0; i < 8; i += 1) {
+    buffer[offset + i] = Number(remaining & BigInt(255));
+    remaining >>= BigInt(8);
+  }
 }
 
 /** PDA for a spot market, keyed by its token pair. */
@@ -309,7 +334,7 @@ export async function initializeSpotMarket({
 
   const data = Buffer.alloc(16);
   DISCRIMINATORS.initializeSpotMarket.copy(data, 0);
-  data.writeBigUInt64LE(BigInt(feeRateBps), 8);
+  writeU64LE(data, BigInt(feeRateBps), 8);
 
   const orderBookData = Buffer.from(DISCRIMINATORS.initializeSpotOrderbook);
   const transaction = new Transaction().add(
@@ -385,8 +410,8 @@ export async function depositSpot({
 
   const data = Buffer.alloc(24);
   DISCRIMINATORS.depositSpot.copy(data, 0);
-  data.writeBigUInt64LE(toRaw(baseAmount, baseDecimals), 8);
-  data.writeBigUInt64LE(toRaw(quoteAmount, quoteDecimals), 16);
+  writeU64LE(data, toRaw(baseAmount, baseDecimals), 8);
+  writeU64LE(data, toRaw(quoteAmount, quoteDecimals), 16);
 
   const traderBase = await getAssociatedTokenAddress(baseMint, publicKey);
   const traderQuote = await getAssociatedTokenAddress(quoteMint, publicKey);
@@ -451,8 +476,8 @@ export async function withdrawSpot({
 
   const data = Buffer.alloc(24);
   DISCRIMINATORS.withdrawSpot.copy(data, 0);
-  data.writeBigUInt64LE(toRaw(baseAmount, baseDecimals), 8);
-  data.writeBigUInt64LE(toRaw(quoteAmount, quoteDecimals), 16);
+  writeU64LE(data, toRaw(baseAmount, baseDecimals), 8);
+  writeU64LE(data, toRaw(quoteAmount, quoteDecimals), 16);
 
   const traderBase = await getAssociatedTokenAddress(baseMint, publicKey);
   const traderQuote = await getAssociatedTokenAddress(quoteMint, publicKey);
@@ -563,8 +588,8 @@ export async function placeSpotOrder({
   DISCRIMINATORS.placeSpotOrder.copy(data, 0);
   // Side::Long == buy, Side::Short == sell
   data.writeUInt8(side === "Buy" ? 0 : 1, 8);
-  data.writeBigUInt64LE(BigInt(Math.round(price * PRICE_DECIMALS)), 9);
-  data.writeBigUInt64LE(toRaw(size, baseDecimals), 17);
+  writeU64LE(data, BigInt(Math.round(price * PRICE_DECIMALS)), 9);
+  writeU64LE(data, toRaw(size, baseDecimals), 17);
 
   const transaction = new Transaction().add(
     new TransactionInstruction({
@@ -607,7 +632,7 @@ export async function cancelSpotOrder({
 
   const data = Buffer.alloc(17);
   DISCRIMINATORS.cancelSpotOrder.copy(data, 0);
-  data.writeBigUInt64LE(BigInt(orderIndex), 8);
+  writeU64LE(data, BigInt(orderIndex), 8);
   data.writeUInt8(side === "Buy" ? 0 : 1, 16);
 
   const transaction = new Transaction().add(
