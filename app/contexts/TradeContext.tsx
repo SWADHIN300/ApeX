@@ -11,11 +11,9 @@ import { useMarket } from "@/contexts/MarketContext";
 import {
   fetchProtocolMarginAccount,
   closeProtocolPosition,
-  subscribeProtocolMarginAccount,
 } from "@/lib/apexProtocol";
 import {
   fetchOnChainPosition,
-  subscribeOnChainPosition,
   mapOnChainToFrontendPosition,
 } from "@/lib/positionDecoder";
 import { Position, PortfolioData, TradeRecord } from "@/lib/types";
@@ -132,73 +130,20 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [connection, market, publicKey]);
 
+  // Poll the wallet's on-chain state. This works with RPC providers that
+  // reject WebSocket accountSubscribe requests and refreshes within five seconds.
   useEffect(() => {
     if (!publicKey || !market) return;
-    let active = true;
 
-    fetchProtocolMarginAccount(connection, market.symbol, publicKey)
-      .then((margin) => {
-        if (active) applyMargin(margin);
-      })
-      .catch(() => {});
-
-    fetchOnChainPosition(connection, market.symbol, publicKey)
-      .then((decoded) => {
-        if (!active) return;
-        setOnChainPosition(
-          decoded
-            ? mapOnChainToFrontendPosition(decoded, market.symbol, market.price)
-            : null
-        );
-      })
-      .catch(() => {
-        if (active) setOnChainPosition(null);
-      });
-
-    return () => {
-      active = false;
+    const refresh = () => {
+      void refreshLedgerBalance();
+      void refreshPositions();
     };
-  }, [applyMargin, connection, market, publicKey]);
 
-  // Subscribe to margin account changes
-  useEffect(() => {
-    if (!publicKey || !market) return;
-
-    try {
-      return subscribeProtocolMarginAccount(
-        connection,
-        market.symbol,
-        publicKey,
-        applyMargin
-      );
-    } catch {
-      return;
-    }
-  }, [applyMargin, connection, market, publicKey]);
-
-  // Subscribe to Position PDA changes
-  useEffect(() => {
-    if (!publicKey || !market) return;
-
-    try {
-      return subscribeOnChainPosition(
-        connection,
-        market.symbol,
-        publicKey,
-        (decoded) => {
-          if (decoded) {
-            setOnChainPosition(
-              mapOnChainToFrontendPosition(decoded, market.symbol, market.price)
-            );
-          } else {
-            setOnChainPosition(null);
-          }
-        }
-      );
-    } catch {
-      return;
-    }
-  }, [connection, market, publicKey]);
+    refresh();
+    const timer = setInterval(refresh, 5_000);
+    return () => clearInterval(timer);
+  }, [market, publicKey, refreshLedgerBalance, refreshPositions]);
 
   const placeOrder = () => {
     void refreshLedgerBalance();

@@ -142,7 +142,7 @@ export default function ChartPanel() {
   ];
 
   return (
-    <section className="col-span-12 lg:col-span-6 xl:col-span-7 min-h-[360px] lg:min-h-0 min-w-0 b-thin flex flex-col bg-bg-surface overflow-hidden relative">
+    <section className="col-span-12 lg:col-span-7 min-h-[360px] lg:min-h-0 min-w-0 b-thin flex flex-col bg-bg-surface overflow-hidden relative">
       {/* Toolbar Overlay */}
       <div className="absolute top-2 left-2 right-2 flex items-center justify-between gap-2 z-20 pointer-events-none">
         {/* Left Side: Unified Floating Toolbar */}

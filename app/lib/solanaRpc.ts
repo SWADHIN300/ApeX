@@ -17,6 +17,23 @@ export function getSolanaRpcEndpoint(network: LedgerNetwork) {
   );
 }
 
+/** Optional websocket endpoint for RPC providers that use a separate WS URL. */
+export function getSolanaWsEndpoint(network: LedgerNetwork): string | undefined {
+  if (network === "devnet") {
+    return (
+      process.env.NEXT_PUBLIC_SOLANA_DEVNET_WS_URL ||
+      process.env.NEXT_PUBLIC_SOLANA_WS_URL ||
+      undefined
+    );
+  }
+
+  return (
+    process.env.NEXT_PUBLIC_SOLANA_MAINNET_WS_URL ||
+    process.env.NEXT_PUBLIC_SOLANA_WS_URL ||
+    undefined
+  );
+}
+
 export function getServerSolanaRpcEndpoint(network: LedgerNetwork) {
   if (network === "devnet") {
     return (

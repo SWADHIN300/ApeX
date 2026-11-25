@@ -8,7 +8,11 @@ import {
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
 import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
 import { SolflareWalletAdapter } from "@solana/wallet-adapter-solflare";
-import { fetchWithRateLimitRetry, getSolanaRpcEndpoint } from "@/lib/solanaRpc";
+import {
+  fetchWithRateLimitRetry,
+  getSolanaRpcEndpoint,
+  getSolanaWsEndpoint,
+} from "@/lib/solanaRpc";
 import { useLocalStorageState } from "@/hooks/useLocalStorageState";
 
 import "@solana/wallet-adapter-react-ui/styles.css";
@@ -42,6 +46,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   };
 
   const endpoint = useMemo(() => getSolanaRpcEndpoint(network), [network]);
+  const wsEndpoint = useMemo(() => getSolanaWsEndpoint(network), [network]);
+  const connectionConfig = useMemo(
+    () => ({
+      fetch: fetchWithRateLimitRetry,
+      disableRetryOnRateLimit: true,
+      ...(wsEndpoint ? { wsEndpoint } : {}),
+    }),
+    [wsEndpoint],
+  );
 
   const wallets = useMemo(
     () => [new PhantomWalletAdapter(), new SolflareWalletAdapter()],
@@ -61,7 +74,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     <NetworkContext.Provider value={{ network, setNetwork }}>
       <ConnectionProvider
         endpoint={endpoint}
-        config={{ fetch: fetchWithRateLimitRetry, disableRetryOnRateLimit: true }}
+        config={connectionConfig}
       >
         <SolanaWalletProvider wallets={wallets} autoConnect onError={handleError}>
           <WalletModalProvider>{children}</WalletModalProvider>

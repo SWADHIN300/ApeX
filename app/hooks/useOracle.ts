@@ -7,7 +7,6 @@ import { useMarket } from "@/contexts/MarketContext";
 import { getMarketPdas } from "@/lib/apexProtocol";
 import {
   fetchOraclePrice,
-  subscribeOraclePrice,
   type OraclePrice,
 } from "@/lib/pythOracle";
 
@@ -62,20 +61,25 @@ export function useOracle() {
     };
   }, [connection, marketSymbol, isLoading]);
 
-  // Real-time on-chain oracle subscription
+  // Refresh the oracle over HTTP because the configured RPC may reject WebSockets.
   useEffect(() => {
     if (!oracleAddress) return;
 
-    const unsubscribe = subscribeOraclePrice(
-      connection,
-      oracleAddress,
-      (newPrice) => {
-        setOraclePrice(newPrice);
+    let active = true;
+    const refreshPrice = async () => {
+      try {
+        const price = await fetchOraclePrice(connection, oracleAddress);
+        if (active) setOraclePrice(price);
+      } catch {
+        // Keep the latest price visible during temporary RPC failures.
       }
-    );
+    };
+    void refreshPrice();
+    const timer = setInterval(() => void refreshPrice(), 5_000);
 
     return () => {
-      unsubscribe();
+      active = false;
+      clearInterval(timer);
     };
   }, [connection, oracleAddress]);
 

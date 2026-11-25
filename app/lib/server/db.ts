@@ -155,6 +155,20 @@ export async function ensureSchema() {
 
         CREATE INDEX IF NOT EXISTS candles_lookup_idx
           ON candles (pair, timeframe, bucket_start DESC);
+
+        CREATE TABLE IF NOT EXISTS paper_trading_accounts (
+          wallet_address TEXT PRIMARY KEY,
+          account JSONB NOT NULL,
+          claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS paper_auth_challenges (
+          wallet_address TEXT PRIMARY KEY,
+          nonce TEXT NOT NULL,
+          message TEXT NOT NULL,
+          expires_at TIMESTAMPTZ NOT NULL
+        );
       `)
       .then(() => undefined)
       .catch((error) => {
