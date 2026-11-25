@@ -23,11 +23,17 @@ import * as indicators from "@/lib/indicators";
 import { detectAllPatterns, PatternDetection } from "@/lib/patterns/candlestickPatterns";
 import { Candle } from "@/lib/exchanges/types";
 import type { ExchangeName } from "@/lib/exchanges";
+import ChartDrawingLayer from "./ChartDrawingLayer";
 
 interface Props {
   timeframe?: string;
   indicatorConfig?: AdvancedIndicatorConfig;
   drawingTool?: DrawingTool;
+  magnetEnabled?: boolean;
+  drawingsVisible?: boolean;
+  drawingsLocked?: boolean;
+  clearDrawingsKey?: number;
+  undoDrawingsKey?: number;
   chartType?: 'candlestick' | 'line' | 'area';
   exchange?: ExchangeName;
   replayOffset?: number;
@@ -37,6 +43,11 @@ export default function EnhancedChart({
   timeframe = "15m",
   indicatorConfig,
   drawingTool = "crosshair",
+  magnetEnabled = false,
+  drawingsVisible = true,
+  drawingsLocked = false,
+  clearDrawingsKey = 0,
+  undoDrawingsKey = 0,
   chartType = 'candlestick',
   exchange = 'binance',
   replayOffset = 0,
@@ -47,6 +58,7 @@ export default function EnhancedChart({
   const mainSeriesRef = useRef<ISeriesApi<SeriesType> | null>(null);
   const indicatorSeriesRef = useRef<Map<string, ISeriesApi<SeriesType>>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
+  const [chartReadyVersion, setChartReadyVersion] = useState(0);
   const [patterns, setPatterns] = useState<PatternDetection[]>([]);
   const candleDataRef = useRef<Candle[]>([]);
   const replayOffsetRef = useRef(replayOffset);
@@ -113,6 +125,7 @@ export default function EnhancedChart({
       wickDownColor: "#d85a30",
     });
     mainSeriesRef.current = series;
+    setChartReadyVersion((version) => version + 1);
 
     // Resize observer
     const ro = new ResizeObserver((entries) => {
@@ -179,14 +192,17 @@ export default function EnhancedChart({
         mainSeriesRef.current?.setData(closeData);
       }
     }
+    setChartReadyVersion((version) => version + 1);
   }, [chartType]);
 
   // Update drawing tool mode
   useEffect(() => {
     if (!chartRef.current) return;
-    const mode = drawingTool === "crosshair" ? CrosshairMode.Normal : CrosshairMode.Magnet;
+    const mode = drawingTool === "crosshair" && !magnetEnabled
+      ? CrosshairMode.Normal
+      : CrosshairMode.Magnet;
     chartRef.current.applyOptions({ crosshair: { mode } });
-  }, [drawingTool]);
+  }, [drawingTool, magnetEnabled]);
 
   const applyIndicators = useCallback((candles: Candle[]) => {
     if (!chartRef.current || !indicatorConfig) return;
@@ -422,6 +438,17 @@ export default function EnhancedChart({
 
   return (
     <div ref={containerRef} style={{ width: "100%", height: "100%", position: "relative" }}>
+      {chartReadyVersion > 0 && (
+        <ChartDrawingLayer
+          chart={chartRef.current}
+          series={mainSeriesRef.current}
+          tool={drawingTool}
+          drawingsVisible={drawingsVisible}
+          drawingsLocked={drawingsLocked}
+          clearKey={clearDrawingsKey}
+          undoKey={undoDrawingsKey}
+        />
+      )}
       {isLoading && (
         <div
           style={{

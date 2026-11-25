@@ -17,11 +17,17 @@ import type { ExchangeName } from "@/lib/exchanges";
 import type { IChartApi, ISeriesApi, Time } from "lightweight-charts";
 import type { Indicators, DrawingTool } from "./ChartPanel";
 import type { Candle } from "@/lib/exchanges/types";
+import ChartDrawingLayer from "./ChartDrawingLayer";
 
 interface Props {
   timeframe?: string;
   indicators?: Indicators;
   drawingTool?: DrawingTool;
+  magnetEnabled?: boolean;
+  drawingsVisible?: boolean;
+  drawingsLocked?: boolean;
+  clearDrawingsKey?: number;
+  undoDrawingsKey?: number;
   /** Market data source. `apex` renders the protocol's own indexed fills. */
   exchange?: ExchangeName;
   replayOffset?: number;
@@ -31,6 +37,11 @@ export default function CandlestickChart({
   timeframe = "15m",
   indicators = { sma20: true, sma50: true, volume: true },
   drawingTool = "crosshair",
+  magnetEnabled = false,
+  drawingsVisible = true,
+  drawingsLocked = false,
+  clearDrawingsKey = 0,
+  undoDrawingsKey = 0,
   exchange = "binance",
   replayOffset = 0,
 }: Props) {
@@ -42,6 +53,7 @@ export default function CandlestickChart({
   const sma20SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const sma50SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [chartReadyVersion, setChartReadyVersion] = useState(0);
   const [isEmpty, setIsEmpty] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Store loaded close data for SMA recalculation on toggle
@@ -152,6 +164,7 @@ export default function CandlestickChart({
     volumeSeriesRef.current = volumeSeries;
     sma20SeriesRef.current = sma20Series;
     sma50SeriesRef.current = sma50Series;
+    setChartReadyVersion((version) => version + 1);
 
     // Resize observer
     const ro = new ResizeObserver((entries) => {
@@ -229,9 +242,11 @@ export default function CandlestickChart({
   useEffect(() => {
     if (!chartRef.current) return;
     const mode =
-      drawingTool === "crosshair" ? CrosshairMode.Normal : CrosshairMode.Magnet;
+      drawingTool === "crosshair" && !magnetEnabled
+        ? CrosshairMode.Normal
+        : CrosshairMode.Magnet;
     chartRef.current.applyOptions({ crosshair: { mode } });
-  }, [drawingTool]);
+  }, [drawingTool, magnetEnabled]);
 
   // Load data whenever market or timeframe changes
   useEffect(() => {
@@ -334,6 +349,17 @@ export default function CandlestickChart({
 
   return (
     <div ref={containerRef} style={{ width: "100%", height: "100%", position: "relative" }}>
+      {chartReadyVersion > 0 && (
+        <ChartDrawingLayer
+          chart={chartRef.current}
+          series={seriesRef.current}
+          tool={drawingTool}
+          drawingsVisible={drawingsVisible}
+          drawingsLocked={drawingsLocked}
+          clearKey={clearDrawingsKey}
+          undoKey={undoDrawingsKey}
+        />
+      )}
       {isLoading && (
         <div
           style={{
