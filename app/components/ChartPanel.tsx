@@ -14,7 +14,6 @@ import {
   Crosshair,
   TrendingUp,
   Minus,
-  Square,
   Check,
   TrendingDown,
   BarChart3,
@@ -179,9 +178,12 @@ export default function ChartPanel() {
     if (priceAlert === null || priceAlertSymbol !== market?.symbol || !market?.price || !Number.isFinite(market.price)) return;
     const crossed = priceAlert > 0 && (alertDirection === "up" ? market.price >= priceAlert : market.price <= priceAlert);
     if (crossed) {
-      setAlertNotice(`Price reached $${priceAlert.toLocaleString("en-US", { minimumFractionDigits: 2 })}`);
-      setPriceAlert(null);
-      setPriceAlertSymbol(null);
+      const timeoutId = window.setTimeout(() => {
+        setAlertNotice(`Price reached $${priceAlert.toLocaleString("en-US", { minimumFractionDigits: 2 })}`);
+        setPriceAlert(null);
+        setPriceAlertSymbol(null);
+      }, 0);
+      return () => window.clearTimeout(timeoutId);
     }
   }, [alertDirection, market?.price, market?.symbol, priceAlert, priceAlertSymbol]);
 

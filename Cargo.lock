@@ -265,6 +265,7 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
+ "blake3",
 ]
 
 [[package]]
@@ -937,6 +938,7 @@ dependencies = [
 name = "mock_oracle"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "solana-program",
 ]
 

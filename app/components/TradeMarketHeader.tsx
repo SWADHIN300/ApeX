@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Search, X } from "lucide-react";
 import { useMarket } from "@/contexts/MarketContext";
 import { useNetwork } from "@/contexts/WalletProvider";
 import { usePaperTrading } from "@/contexts/PaperTradingContext";
@@ -19,6 +19,8 @@ export default function TradeMarketHeader() {
   const { isPaperTrading } = usePaperTrading();
   const oracle = useOracle();
   const [marketMenuOpen, setMarketMenuOpen] = useState(false);
+  const [marketSearch, setMarketSearch] = useState("");
+  const marketSearchRef = useRef<HTMLInputElement>(null);
   const initialMarketHandled = useRef(false);
   const change = market?.price ? market.change24h : null;
   const changeUp = (change ?? 0) >= 0;
@@ -44,14 +46,38 @@ export default function TradeMarketHeader() {
     }
   }, [market?.symbol, markets, setMarket]);
 
+  useEffect(() => {
+    if (!marketMenuOpen) return;
+    marketSearchRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMarketMenuOpen(false);
+        setMarketSearch("");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [marketMenuOpen]);
+
+  const filteredMarkets = markets.filter((item) => {
+    const query = marketSearch.trim().toLowerCase();
+    return !query || item.symbol.toLowerCase().includes(query) || item.symbol.replace(/-perp$/i, "").toLowerCase().includes(query);
+  });
+
   return (
     <header className="trade-market-header col-span-12 min-w-0 border-b border-t-border bg-bg-surface">
       <div className="trade-market-main relative flex min-w-0 items-center gap-3 px-3 lg:px-4">
         <button
           type="button"
           aria-expanded={marketMenuOpen}
+          aria-controls="trade-market-menu"
           aria-label="Choose perpetual market"
-          onClick={() => setMarketMenuOpen((open) => !open)}
+          onClick={() => {
+            setMarketMenuOpen((open) => {
+              if (open) setMarketSearch("");
+              return !open;
+            });
+          }}
           className="flex min-w-0 items-center gap-2.5 text-left hover:bg-bg-l2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
         >
           <CoinIcon symbol={market?.symbol ?? "ETH-PERP"} size={34} />
@@ -68,19 +94,42 @@ export default function TradeMarketHeader() {
           </span>
         </button>
         {marketMenuOpen && (
-          <div className="absolute left-3 top-[calc(100%-2px)] z-40 max-h-72 w-64 overflow-y-auto border border-t-border bg-bg-l1 shadow-xl lg:left-4">
-            {markets.map((item) => (
+          <div id="trade-market-menu" className="absolute left-3 top-[calc(100%-2px)] z-40 flex max-h-[min(24rem,calc(100vh-8rem))] w-72 max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden border border-t-border bg-bg-l1 shadow-xl lg:left-4">
+            <div className="flex items-center gap-2 border-b border-t-border px-3 py-2">
+              <Search size={15} className="shrink-0 text-text-muted" aria-hidden="true" />
+              <input
+                ref={marketSearchRef}
+                type="search"
+                value={marketSearch}
+                onChange={(event) => setMarketSearch(event.target.value)}
+                placeholder="Search coins"
+                aria-label="Search perpetual markets"
+                autoComplete="off"
+                className="h-8 min-w-0 flex-1 bg-transparent text-sm text-text-main outline-none placeholder:text-text-muted"
+              />
+              {marketSearch && (
+                <button type="button" aria-label="Clear coin search" onClick={() => { setMarketSearch(""); marketSearchRef.current?.focus(); }} className="shrink-0 text-text-muted hover:text-text-main">
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            <div className="min-h-0 overflow-y-auto py-1">
+            {filteredMarkets.length > 0 ? filteredMarkets.map((item) => (
               <button
                 key={item.symbol}
                 type="button"
-                onClick={() => { setMarket(item); setMarketMenuOpen(false); }}
-                className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-bg-l2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                onClick={() => { setMarket(item); setMarketMenuOpen(false); setMarketSearch(""); }}
+                aria-current={item.symbol === market?.symbol ? "true" : undefined}
+                className={`flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-bg-l2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${item.symbol === market?.symbol ? "bg-bg-l2" : ""}`}
               >
                 <CoinIcon symbol={item.symbol} size={22} />
                 <span className="flex-1 font-medium text-xs text-text-main">{item.symbol}</span>
                 <span className={`font-mono text-[10px] ${item.change24h >= 0 ? "text-long" : "text-short"}`}>{item.change24h >= 0 ? "+" : ""}{item.change24h.toFixed(2)}%</span>
               </button>
-            ))}
+            )) : (
+              <p className="px-3 py-4 text-center text-xs text-text-muted">No coins match “{marketSearch}”</p>
+            )}
+            </div>
           </div>
         )}
 

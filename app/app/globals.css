@@ -294,20 +294,11 @@ body {
 .chart-note-editor button:focus-visible,
 .chart-remove-menu button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 .trade-status-bar { grid-row: 4; }
-.trade-topbar { grid-template-columns: 10rem minmax(0, 1fr) auto; }
+.trade-topbar { grid-template-columns: 4rem minmax(0, 1fr) auto; }
 .trade-topbar > a:first-child {
-  width: 10rem;
-  flex-direction: row;
-  justify-content: flex-start;
-  gap: 0.625rem;
-  padding-inline: 1.25rem;
-}
-.trade-topbar > a:first-child span {
-  background: none !important;
-  color: var(--foreground);
-  font-size: 20px !important;
-  letter-spacing: -0.02em !important;
-  -webkit-text-fill-color: currentColor !important;
+  width: 4rem;
+  justify-content: center;
+  padding-inline: 0;
 }
 .trade-topbar .market-context-bar { display: none !important; }
 .trade-topbar nav a {

@@ -22,3 +22,8 @@ anchor-lang = { version = "0.31.1", features = ["init-if-needed"] }
 # anchor_spl::token_2022 and token_interface whenever `token::mint` constraints
 # are used, as initialize_market and initialize_spot_market both do.
 anchor-spl = { version = "0.31.1", features = ["token"] }
+
+# Use the portable implementation for host tests on Windows, where the default
+# BLAKE3 assembly build expects a 64-bit GCC toolchain.
+[target.'cfg(not(target_os = "solana"))'.dependencies]
+blake3 = { version = "1.5.5", features = ["pure"] }

@@ -141,6 +141,7 @@ export default function TopBar({
         {/* Logo */}
         <Link
           href="/"
+          aria-label="Home"
           className="flex h-14 w-16 shrink-0 flex-col items-center justify-center gap-0.5 select-none br-thin group"
           style={{ transition: "background 0.2s" }}
           onMouseEnter={(e) => {
@@ -152,24 +153,13 @@ export default function TopBar({
         >
           <Image
             src="/logo.png"
-            alt="ApeX Logo"
+            alt=""
             width={24}
             height={24}
             priority
             className="rounded-sm"
             style={{ filter: "drop-shadow(0 0 6px rgba(124,111,255,0.5))" }}
           />
-          <span
-            className="font-black text-text-main leading-none tracking-widest"
-            style={{
-              fontSize: "8px",
-              background: "var(--gradient-primary)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-            }}
-          >
-            ApeX
-          </span>
         </Link>
 
         {/* Center: toggle + search + nav + market stats */}

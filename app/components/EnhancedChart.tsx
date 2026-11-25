@@ -64,11 +64,14 @@ export default function EnhancedChart({
   const mainSeriesRef = useRef<ISeriesApi<SeriesType> | null>(null);
   const indicatorSeriesRef = useRef<Map<string, ISeriesApi<SeriesType>>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
-  const [chartReadyVersion, setChartReadyVersion] = useState(0);
+  const [drawingChart, setDrawingChart] = useState<IChartApi | null>(null);
+  const [drawingSeries, setDrawingSeries] = useState<ISeriesApi<SeriesType> | null>(null);
   const [patterns, setPatterns] = useState<PatternDetection[]>([]);
   const candleDataRef = useRef<Candle[]>([]);
   const replayOffsetRef = useRef(replayOffset);
-  replayOffsetRef.current = replayOffset;
+  useEffect(() => {
+    replayOffsetRef.current = replayOffset;
+  }, [replayOffset]);
 
   // Calculate indicator helper
   const calculateSMA = useCallback((data: { time: Time; value: number }[], period: number) => {
@@ -121,6 +124,7 @@ export default function EnhancedChart({
     });
 
     chartRef.current = chart;
+    setDrawingChart(chart);
 
     // Create initial candlestick series
     const series = chart.addSeries(CandlestickSeries, {
@@ -131,7 +135,7 @@ export default function EnhancedChart({
       wickDownColor: "#d85a30",
     });
     mainSeriesRef.current = series;
-    setChartReadyVersion((version) => version + 1);
+    setDrawingSeries(series);
 
     // Resize observer
     const ro = new ResizeObserver((entries) => {
@@ -147,6 +151,8 @@ export default function EnhancedChart({
       chart.remove();
       chartRef.current = null;
       mainSeriesRef.current = null;
+      setDrawingChart(null);
+      setDrawingSeries(null);
       indicatorSeries.clear();
     };
   }, []);
@@ -168,12 +174,14 @@ export default function EnhancedChart({
         wickDownColor: "#d85a30",
       });
       mainSeriesRef.current = series;
+      setDrawingSeries(series);
     } else if (chartType === 'line') {
       const series = chartRef.current.addSeries(LineSeries, {
         color: "#2962FF",
         lineWidth: 2,
       });
       mainSeriesRef.current = series;
+      setDrawingSeries(series);
     } else if (chartType === 'area') {
       const series = chartRef.current.addSeries(AreaSeries, {
         lineColor: "#2962FF",
@@ -182,6 +190,7 @@ export default function EnhancedChart({
         lineWidth: 2,
       });
       mainSeriesRef.current = series;
+      setDrawingSeries(series);
     }
 
     // Re-apply data if available
@@ -198,7 +207,6 @@ export default function EnhancedChart({
         mainSeriesRef.current?.setData(closeData);
       }
     }
-    setChartReadyVersion((version) => version + 1);
   }, [chartType]);
 
   // Update drawing tool mode
@@ -444,10 +452,10 @@ export default function EnhancedChart({
 
   return (
     <div ref={containerRef} style={{ width: "100%", height: "100%", position: "relative" }}>
-      {chartReadyVersion > 0 && (
+      {drawingChart && (
         <ChartDrawingLayer
-          chart={chartRef.current}
-          series={mainSeriesRef.current}
+          chart={drawingChart}
+          series={drawingSeries}
           tool={drawingTool}
           drawingsVisible={drawingsVisible}
           drawingsLocked={drawingsLocked}

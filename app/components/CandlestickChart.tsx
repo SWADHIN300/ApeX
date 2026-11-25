@@ -59,7 +59,8 @@ export default function CandlestickChart({
   const sma20SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const sma50SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [chartReadyVersion, setChartReadyVersion] = useState(0);
+  const [drawingChart, setDrawingChart] = useState<IChartApi | null>(null);
+  const [drawingSeries, setDrawingSeries] = useState<ISeriesApi<"Candlestick"> | null>(null);
   const [isEmpty, setIsEmpty] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Store loaded close data for SMA recalculation on toggle
@@ -67,8 +68,12 @@ export default function CandlestickChart({
   const candleDataRef = useRef<Candle[]>([]);
   const replayOffsetRef = useRef(replayOffset);
   const indicatorsRef = useRef(indicators);
-  replayOffsetRef.current = replayOffset;
-  indicatorsRef.current = indicators;
+  useEffect(() => {
+    replayOffsetRef.current = replayOffset;
+  }, [replayOffset]);
+  useEffect(() => {
+    indicatorsRef.current = indicators;
+  }, [indicators]);
   const rangeLow = market?.low24h ?? 0;
   const rangeHigh = market?.high24h ?? 0;
   const lastPrice = market?.price ?? 0;
@@ -167,10 +172,11 @@ export default function CandlestickChart({
 
     chartRef.current = chart;
     seriesRef.current = series;
+    setDrawingChart(chart);
+    setDrawingSeries(series);
     volumeSeriesRef.current = volumeSeries;
     sma20SeriesRef.current = sma20Series;
     sma50SeriesRef.current = sma50Series;
-    setChartReadyVersion((version) => version + 1);
 
     // Resize observer
     const ro = new ResizeObserver((entries) => {
@@ -186,6 +192,8 @@ export default function CandlestickChart({
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      setDrawingChart(null);
+      setDrawingSeries(null);
       volumeSeriesRef.current = null;
       sma20SeriesRef.current = null;
       sma50SeriesRef.current = null;
@@ -355,10 +363,10 @@ export default function CandlestickChart({
 
   return (
     <div ref={containerRef} style={{ width: "100%", height: "100%", position: "relative" }}>
-      {chartReadyVersion > 0 && (
+      {drawingChart && (
         <ChartDrawingLayer
-          chart={chartRef.current}
-          series={seriesRef.current}
+          chart={drawingChart}
+          series={drawingSeries}
           tool={drawingTool}
           drawingsVisible={drawingsVisible}
           drawingsLocked={drawingsLocked}
