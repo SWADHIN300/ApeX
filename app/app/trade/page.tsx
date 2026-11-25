@@ -10,11 +10,18 @@ import TradeMarketHeader from "@/components/TradeMarketHeader";
 import { Activity, Wifi } from "lucide-react";
 import { useNetwork } from "@/contexts/WalletProvider";
 import { useWallet } from "@solana/wallet-adapter-react";
+import { exchangeManager, type ExchangeName } from "@/lib/exchanges";
 
 export default function TradePage() {
   const [isPositionsOpen, setIsPositionsOpen] = useState(true);
+  const [activeExchange, setActiveExchange] = useState<ExchangeName>(exchangeManager.getActiveExchange());
   const { network } = useNetwork();
   const { connected } = useWallet();
+
+  const selectExchange = (exchange: ExchangeName) => {
+    setActiveExchange(exchange);
+    exchangeManager.setActiveExchange(exchange);
+  };
 
   return (
     <AppShell>
@@ -26,8 +33,8 @@ export default function TradePage() {
         }`}
       >
         <TradeMarketHeader />
-        <ChartPanel />
-        <OrderBook />
+        <ChartPanel activeExchange={activeExchange} onExchangeChange={selectExchange} />
+        <OrderBook selectedExchange={activeExchange} />
         <OrderForm />
         <PositionPanel
           isOpen={isPositionsOpen}

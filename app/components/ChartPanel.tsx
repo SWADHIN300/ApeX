@@ -7,7 +7,7 @@ import TradingViewChart from "./TradingViewChart";
 import AdvancedIndicators, { AdvancedIndicatorConfig } from "./AdvancedIndicators";
 import AdvancedAnalyticsPanel from "./AdvancedAnalyticsPanel";
 import { useMarket } from "@/contexts/MarketContext";
-import { exchangeManager, type ExchangeName } from "@/lib/exchanges";
+import type { ExchangeName } from "@/lib/exchanges";
 import {
   LineChart,
   X,
@@ -93,7 +93,12 @@ export type DrawingTool =
   | "measure" | "zoom";
 export type ChartType = "candlestick" | "line" | "area";
 
-export default function ChartPanel() {
+interface ChartPanelProps {
+  activeExchange: ExchangeName;
+  onExchangeChange: (exchange: ExchangeName) => void;
+}
+
+export default function ChartPanel({ activeExchange, onExchangeChange }: ChartPanelProps) {
   const { market } = useMarket();
   const [active, setActive] = useState("5m");
   const [showIndicators, setShowIndicators] = useState(false);
@@ -128,7 +133,6 @@ export default function ChartPanel() {
   });
   const [drawingTool, setDrawingTool] = useState<DrawingTool>("crosshair");
   const [chartType, setChartType] = useState<ChartType>("candlestick");
-  const [activeExchange, setActiveExchange] = useState(exchangeManager.getActiveExchange());
   const [useEnhancedChart, setUseEnhancedChart] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -627,8 +631,7 @@ export default function ChartPanel() {
                   <button
                     key={id}
                     onClick={() => {
-                      setActiveExchange(id);
-                      exchangeManager.setActiveExchange(id);
+                      onExchangeChange(id);
                       setShowExchange(false);
                     }}
                     className={`w-full flex items-center justify-between px-3 py-2.5 transition-colors ${

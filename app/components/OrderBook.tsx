@@ -15,10 +15,11 @@ const fmtTotal = (t: number) => {
 
 interface OrderBookProps {
   onSelectPrice?: (price: number) => void;
+  selectedExchange?: ExchangeName;
 }
 
-export default function OrderBook({ onSelectPrice }: OrderBookProps = {}) {
-  const bookSource: ExchangeName = "binance";
+export default function OrderBook({ onSelectPrice, selectedExchange = "binance" }: OrderBookProps = {}) {
+  const bookSource = selectedExchange;
   const { bids, asks, source } = useOrderBook(bookSource);
   const { market } = useMarket();
   const sourceLabel =
