@@ -34,6 +34,9 @@ interface Props {
   drawingsLocked?: boolean;
   clearDrawingsKey?: number;
   undoDrawingsKey?: number;
+  emojiChoice?: string;
+  onDrawingComplete?: () => void;
+  onToolCancel?: () => void;
   chartType?: 'candlestick' | 'line' | 'area';
   exchange?: ExchangeName;
   replayOffset?: number;
@@ -48,6 +51,9 @@ export default function EnhancedChart({
   drawingsLocked = false,
   clearDrawingsKey = 0,
   undoDrawingsKey = 0,
+  emojiChoice = "📍",
+  onDrawingComplete = () => undefined,
+  onToolCancel = () => undefined,
   chartType = 'candlestick',
   exchange = 'binance',
   replayOffset = 0,
@@ -198,7 +204,7 @@ export default function EnhancedChart({
   // Update drawing tool mode
   useEffect(() => {
     if (!chartRef.current) return;
-    const mode = drawingTool === "crosshair" && !magnetEnabled
+    const mode = (drawingTool === "crosshair" || drawingTool === "cursor") && !magnetEnabled
       ? CrosshairMode.Normal
       : CrosshairMode.Magnet;
     chartRef.current.applyOptions({ crosshair: { mode } });
@@ -447,6 +453,11 @@ export default function EnhancedChart({
           drawingsLocked={drawingsLocked}
           clearKey={clearDrawingsKey}
           undoKey={undoDrawingsKey}
+          magnetEnabled={magnetEnabled}
+          emojiChoice={emojiChoice}
+          onDrawingComplete={onDrawingComplete}
+          onToolCancel={onToolCancel}
+          timeframe={timeframe}
         />
       )}
       {isLoading && (

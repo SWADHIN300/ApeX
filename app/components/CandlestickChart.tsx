@@ -28,6 +28,9 @@ interface Props {
   drawingsLocked?: boolean;
   clearDrawingsKey?: number;
   undoDrawingsKey?: number;
+  emojiChoice?: string;
+  onDrawingComplete?: () => void;
+  onToolCancel?: () => void;
   /** Market data source. `apex` renders the protocol's own indexed fills. */
   exchange?: ExchangeName;
   replayOffset?: number;
@@ -42,6 +45,9 @@ export default function CandlestickChart({
   drawingsLocked = false,
   clearDrawingsKey = 0,
   undoDrawingsKey = 0,
+  emojiChoice = "📍",
+  onDrawingComplete = () => undefined,
+  onToolCancel = () => undefined,
   exchange = "binance",
   replayOffset = 0,
 }: Props) {
@@ -242,7 +248,7 @@ export default function CandlestickChart({
   useEffect(() => {
     if (!chartRef.current) return;
     const mode =
-      drawingTool === "crosshair" && !magnetEnabled
+      (drawingTool === "crosshair" || drawingTool === "cursor") && !magnetEnabled
         ? CrosshairMode.Normal
         : CrosshairMode.Magnet;
     chartRef.current.applyOptions({ crosshair: { mode } });
@@ -358,6 +364,11 @@ export default function CandlestickChart({
           drawingsLocked={drawingsLocked}
           clearKey={clearDrawingsKey}
           undoKey={undoDrawingsKey}
+          magnetEnabled={magnetEnabled}
+          emojiChoice={emojiChoice}
+          onDrawingComplete={onDrawingComplete}
+          onToolCancel={onToolCancel}
+          timeframe={timeframe}
         />
       )}
       {isLoading && (

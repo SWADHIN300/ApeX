@@ -42,6 +42,24 @@ import {
   GitBranch,
   Share2,
   Undo2,
+  MousePointer2,
+  Circle,
+  Eraser,
+  MoveUpRight,
+  PanelTop,
+  Network,
+  Triangle,
+  BriefcaseBusiness,
+  Pencil,
+  ArrowUpRight,
+  RectangleHorizontal,
+  Tag,
+  MessageSquare,
+  Shapes,
+  AreaChart,
+  ChartNoAxesCombined,
+  Sparkles,
+  Repeat2,
 } from "lucide-react";
 
 const timeframes = ["1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"];
@@ -66,11 +84,14 @@ export type Indicators = {
 };
 
 export type DrawingTool =
-  | "crosshair"
-  | "hline"
-  | "trendline"
-  | "rectangle"
-  | "fibonacci";
+  | "crosshair" | "cursor" | "dot" | "eraser"
+  | "trendline" | "ray" | "hline" | "channel"
+  | "rectangle" | "fibonacci" | "gannFan"
+  | "xabcd" | "headShoulders" | "trianglePattern" | "elliottWave"
+  | "longPosition" | "shortPosition"
+  | "brush" | "freehand" | "area" | "arrow" | "ellipse" | "triangleShape"
+  | "text" | "label" | "callout" | "emoji" | "icon"
+  | "measure" | "zoom";
 export type ChartType = "candlestick" | "line" | "area";
 
 export default function ChartPanel() {
@@ -115,6 +136,10 @@ export default function ChartPanel() {
   const [magnetEnabled, setMagnetEnabled] = useState(false);
   const [drawingsLocked, setDrawingsLocked] = useState(false);
   const [drawingsVisible, setDrawingsVisible] = useState(true);
+  const [indicatorsVisible, setIndicatorsVisible] = useState(true);
+  const [stayInDrawingMode, setStayInDrawingMode] = useState(true);
+  const [showRemoveMenu, setShowRemoveMenu] = useState(false);
+  const [emojiChoice, setEmojiChoice] = useState("📍");
   const [clearDrawingsKey, setClearDrawingsKey] = useState(0);
   const [undoDrawingsKey, setUndoDrawingsKey] = useState(0);
   const [showObjectsPanel, setShowObjectsPanel] = useState(false);
@@ -198,33 +223,89 @@ export default function ChartPanel() {
     setIndicators((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const completeDrawing = () => {
+    if (!stayInDrawingMode) setDrawingTool("crosshair");
+  };
+
+  const removeIndicators = () => {
+    setIndicators({ sma20: false, sma50: false, volume: false });
+    setAdvancedIndicators((current) => ({
+      ...current,
+      sma20: false, sma50: false, sma200: false, ema12: false, ema26: false, ema50: false,
+      rsi: false, macd: false, stochastic: false, bollingerBands: false, atr: false,
+      volume: false, vwap: false, obv: false, fibonacci: false,
+    }));
+    setTradingViewAvailable(false);
+    setShowRemoveMenu(false);
+  };
+
+  const removeDrawings = () => {
+    setClearDrawingsKey((key) => key + 1);
+    setDrawingTool("crosshair");
+    setShowRemoveMenu(false);
+  };
+
+  const removeAllChartObjects = () => {
+    removeDrawings();
+    removeIndicators();
+  };
+
+  const visibleIndicators = indicatorsVisible ? indicators : { sma20: false, sma50: false, volume: false };
+  const visibleAdvancedIndicators = indicatorsVisible ? advancedIndicators : {
+    ...advancedIndicators,
+    sma20: false, sma50: false, sma200: false, ema12: false, ema26: false, ema50: false,
+    rsi: false, macd: false, stochastic: false, bollingerBands: false, atr: false,
+    volume: false, vwap: false, obv: false, fibonacci: false,
+  };
+
   const drawingToolGroups: { id: string; tools: { id: DrawingTool | null; label: string; icon: React.ReactNode }[] }[] = [
-    { id: "cursor", tools: [{ id: "crosshair", label: "Crosshair", icon: <Crosshair size={17} /> }] },
-    {
-      id: "lines",
-      tools: [
-        { id: "trendline", label: "Trend line", icon: <TrendingUp size={17} /> },
-        { id: "hline", label: "Horizontal line", icon: <Minus size={17} /> },
-        { id: "fibonacci", label: "Fib retracement", icon: <GitBranch size={17} /> },
-        { id: null, label: "Pattern tools (not available yet)", icon: <Share2 size={17} /> },
-      ],
-    },
-    {
-      id: "annotations",
-      tools: [
-        { id: null, label: "Brush (not available yet)", icon: <Brush size={17} /> },
-        { id: null, label: "Text note (not available yet)", icon: <TextCursorInput size={17} /> },
-        { id: null, label: "Emoji annotation (not available yet)", icon: <Smile size={17} /> },
-        { id: "rectangle", label: "Rectangle", icon: <Square size={17} /> },
-      ],
-    },
-    {
-      id: "measure",
-      tools: [
-        { id: null, label: "Measure (not available yet)", icon: <Ruler size={17} /> },
-        { id: null, label: "Zoom in (not available yet)", icon: <ZoomIn size={17} /> },
-      ],
-    },
+    { id: "cursor", tools: [
+      { id: "crosshair", label: "Crosshair", icon: <Crosshair size={17} /> },
+      { id: "cursor", label: "Pointer cursor", icon: <MousePointer2 size={17} /> },
+      { id: "dot", label: "Place dot", icon: <Circle size={17} /> },
+      { id: "eraser", label: "Erase nearest drawing", icon: <Eraser size={17} /> },
+    ] },
+    { id: "lines", tools: [
+      { id: "trendline", label: "Trend line", icon: <TrendingUp size={17} /> },
+      { id: "ray", label: "Ray", icon: <MoveUpRight size={17} /> },
+      { id: "hline", label: "Horizontal line", icon: <Minus size={17} /> },
+      { id: "channel", label: "Parallel channel", icon: <PanelTop size={17} /> },
+    ] },
+    { id: "fibonacci", tools: [
+      { id: "fibonacci", label: "Fib retracement", icon: <GitBranch size={17} /> },
+      { id: "gannFan", label: "Gann fan", icon: <Network size={17} /> },
+    ] },
+    { id: "patterns", tools: [
+      { id: "xabcd", label: "XABCD pattern", icon: <Share2 size={17} /> },
+      { id: "headShoulders", label: "Head and shoulders", icon: <ChartNoAxesCombined size={17} /> },
+      { id: "trianglePattern", label: "Triangle pattern", icon: <Triangle size={17} /> },
+      { id: "elliottWave", label: "Elliott wave", icon: <TrendingUp size={17} /> },
+    ] },
+    { id: "positions", tools: [
+      { id: "longPosition", label: "Long position planning overlay (does not place orders)", icon: <BriefcaseBusiness size={17} /> },
+      { id: "shortPosition", label: "Short position planning overlay (does not place orders)", icon: <BriefcaseBusiness size={17} className="rotate-180" /> },
+    ] },
+    { id: "shapes", tools: [
+      { id: "brush", label: "Brush", icon: <Brush size={17} /> },
+      { id: "freehand", label: "Freehand path", icon: <Pencil size={17} /> },
+      { id: "area", label: "Area shape", icon: <AreaChart size={17} /> },
+      { id: "arrow", label: "Arrow", icon: <ArrowUpRight size={17} /> },
+      { id: "rectangle", label: "Rectangle", icon: <RectangleHorizontal size={17} /> },
+      { id: "ellipse", label: "Ellipse", icon: <Circle size={17} /> },
+      { id: "triangleShape", label: "Triangle shape", icon: <Triangle size={17} /> },
+    ] },
+    { id: "notes", tools: [
+      { id: "text", label: "Text note", icon: <TextCursorInput size={17} /> },
+      { id: "label", label: "Label", icon: <Tag size={17} /> },
+      { id: "callout", label: "Callout", icon: <MessageSquare size={17} /> },
+      { id: "emoji", label: "Emoji", icon: <Smile size={17} /> },
+      { id: "icon", label: "Icon stamp", icon: <Shapes size={17} /> },
+    ] },
+    { id: "measure", tools: [
+      { id: null, label: "Unknown tool", icon: <Sparkles size={17} /> },
+      { id: "measure", label: "Price, percent, bars, and time measure", icon: <Ruler size={17} /> },
+      { id: "zoom", label: "Zoom selection", icon: <ZoomIn size={17} /> },
+    ] },
   ];
   const drawingTools = drawingToolGroups.flatMap((group) => group.tools).filter(
     (tool): tool is { id: DrawingTool; label: string; icon: React.ReactNode } => tool.id !== null,
@@ -620,17 +701,27 @@ export default function ChartPanel() {
           ))}
           <div className="flex w-full flex-col items-center gap-1 border-b border-white/10 px-1 pb-1.5">
             <button type="button" aria-label="Magnet snapping" aria-pressed={magnetEnabled} title="Magnet snapping" onClick={() => { setMagnetEnabled((value) => !value); setTradingViewAvailable(false); }} className={`flex h-9 w-9 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${magnetEnabled ? "bg-white/15 text-white" : "text-[#a9acb5] hover:bg-white/10 hover:text-white"}`}><Magnet size={17} /></button>
+            <button type="button" aria-label={stayInDrawingMode ? "Stay in drawing mode: on" : "Stay in drawing mode: off"} aria-pressed={stayInDrawingMode} title="Stay in drawing mode" onClick={() => setStayInDrawingMode((value) => !value)} className={`flex h-9 w-9 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${stayInDrawingMode ? "bg-white/15 text-white" : "text-[#a9acb5] hover:bg-white/10 hover:text-white"}`}><Repeat2 size={17} /></button>
             <button type="button" aria-label={drawingsLocked ? "Unlock drawings" : "Lock drawings"} aria-pressed={drawingsLocked} title={drawingsLocked ? "Unlock drawings" : "Lock drawings"} onClick={() => setDrawingsLocked((value) => !value)} className={`flex h-9 w-9 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${drawingsLocked ? "bg-white/15 text-white" : "text-[#a9acb5] hover:bg-white/10 hover:text-white"}`}><LockKeyhole size={17} /></button>
             <button type="button" aria-label={drawingsVisible ? "Hide drawings" : "Show drawings"} aria-pressed={!drawingsVisible} title={drawingsVisible ? "Hide drawings" : "Show drawings"} onClick={() => setDrawingsVisible((value) => !value)} className={`flex h-9 w-9 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${drawingsVisible ? "text-[#a9acb5] hover:bg-white/10 hover:text-white" : "bg-white/15 text-white"}`}><Eye size={17} /></button>
+            <button type="button" aria-label={indicatorsVisible ? "Hide indicators" : "Show indicators"} aria-pressed={!indicatorsVisible} title={indicatorsVisible ? "Hide indicators" : "Show indicators"} onClick={() => { setIndicatorsVisible((value) => !value); setTradingViewAvailable(false); }} className={`flex h-9 w-9 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${indicatorsVisible ? "text-[#a9acb5] hover:bg-white/10 hover:text-white" : "bg-white/15 text-white"}`}><ChartNoAxesCombined size={17} /></button>
           </div>
           <button type="button" aria-label="Undo last drawing" title="Undo last drawing" onClick={() => setUndoDrawingsKey((key) => key + 1)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-[#a9acb5] hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"><Undo2 size={17} /></button>
-          <button type="button" aria-label="Clear all drawings" title="Clear all drawings" onClick={() => { setClearDrawingsKey((key) => key + 1); setDrawingTool("crosshair"); }} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-[#a9acb5] hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"><Trash2 size={17} /></button>
+          <button type="button" aria-label="Remove drawings or indicators" aria-expanded={showRemoveMenu} title="Remove drawings, indicators, or both" onClick={() => setShowRemoveMenu((value) => !value)} className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${showRemoveMenu ? "bg-white/15 text-white" : "text-[#a9acb5] hover:bg-white/10 hover:text-white"}`}><Trash2 size={17} /></button>
         </aside>
+      )}
+
+      {isFullscreen && showRemoveMenu && (
+        <div role="group" aria-label="Remove chart items" className="chart-remove-menu absolute bottom-2 left-14 z-40 w-48 border border-white/15 bg-[#101218] p-1 shadow-xl">
+          <button type="button" onClick={removeDrawings} className="w-full px-3 py-2 text-left text-xs text-white/80 hover:bg-white/10">Remove drawings</button>
+          <button type="button" onClick={removeIndicators} className="w-full px-3 py-2 text-left text-xs text-white/80 hover:bg-white/10">Remove indicators</button>
+          <button type="button" onClick={removeAllChartObjects} className="w-full px-3 py-2 text-left text-xs text-white/80 hover:bg-white/10">Remove drawings and indicators</button>
+        </div>
       )}
 
       {isFullscreen && (
         <aside aria-label="Chart panels" className="chart-utility-rail absolute bottom-2 right-0 top-11 z-20 flex w-12 flex-col items-center gap-1 border-l border-t-border bg-[#0b0d12] py-1.5">
-          <button type="button" aria-label="Object tree" aria-pressed={showObjectsPanel} title="Object tree" onClick={() => setShowObjectsPanel((value) => !value)} className={`flex h-9 w-9 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${showObjectsPanel ? "bg-white/15 text-white" : "text-[#a9acb5] hover:bg-white/10 hover:text-white"}`}><ListTree size={17} /></button>
+          <button type="button" aria-label="Drawing controls" aria-pressed={showObjectsPanel} title="Drawing controls" onClick={() => setShowObjectsPanel((value) => !value)} className={`flex h-9 w-9 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${showObjectsPanel ? "bg-white/15 text-white" : "text-[#a9acb5] hover:bg-white/10 hover:text-white"}`}><ListTree size={17} /></button>
           <button type="button" aria-label="Price alerts" aria-pressed={showAlert} title="Price alerts" onClick={() => { setShowAlert((value) => !value); setAlertNotice(""); }} className={`flex h-9 w-9 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${showAlert ? "bg-white/15 text-white" : "text-[#a9acb5] hover:bg-white/10 hover:text-white"}`}><Clock3 size={17} /></button>
           <button type="button" aria-label="Indicators" aria-pressed={showAdvancedIndicators} title="Indicators" onClick={() => setShowAdvancedIndicators((value) => !value)} className={`flex h-9 w-9 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${showAdvancedIndicators ? "bg-white/15 text-white" : "text-[#a9acb5] hover:bg-white/10 hover:text-white"}`}><Layers size={17} /></button>
           <button type="button" aria-label="Chart analytics" aria-pressed={showAnalytics} title="Chart analytics" onClick={() => setShowAnalytics((value) => !value)} className={`flex h-9 w-9 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${showAnalytics ? "bg-white/15 text-white" : "text-[#a9acb5] hover:bg-white/10 hover:text-white"}`}><LayoutGrid size={17} /></button>
@@ -638,9 +729,9 @@ export default function ChartPanel() {
       )}
 
       {isFullscreen && showObjectsPanel && (
-        <section className="chart-objects-panel absolute right-14 top-12 z-30 w-64 border border-white/10 bg-[#101218] p-3 text-[#d6d7db] shadow-2xl" aria-label="Chart object tree">
+        <section className="chart-objects-panel absolute right-14 top-12 z-30 w-64 border border-white/10 bg-[#101218] p-3 text-[#d6d7db] shadow-2xl" aria-label="Drawing controls">
           <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-2">
-            <h2 className="text-xs font-semibold">Chart workspace</h2>
+            <h2 className="text-xs font-semibold">Drawing controls</h2>
             <button type="button" onClick={() => setShowObjectsPanel(false)} aria-label="Close object tree" className="text-[#a9acb5] hover:text-white"><X size={14} /></button>
           </div>
           <p className="text-[10px] uppercase tracking-wider text-[#8c909b]">Active drawing tool</p>
@@ -653,6 +744,16 @@ export default function ChartPanel() {
             <span className="text-[#a9acb5]">Drawings</span>
             <button type="button" aria-pressed={drawingsVisible} onClick={() => setDrawingsVisible((value) => !value)} className="text-primary">{drawingsVisible ? "Visible" : "Hidden"}</button>
           </div>
+          <div className="mt-2 flex items-center justify-between text-xs">
+            <span className="text-[#a9acb5]">Indicators</span>
+            <button type="button" aria-pressed={indicatorsVisible} onClick={() => { setIndicatorsVisible((value) => !value); setTradingViewAvailable(false); }} className="text-primary">{indicatorsVisible ? "Visible" : "Hidden"}</button>
+          </div>
+          <label className="mt-3 flex items-center justify-between border-t border-white/10 pt-2 text-xs">
+            <span className="text-[#a9acb5]">Stamp icon</span>
+            <select value={emojiChoice} onChange={(event) => setEmojiChoice(event.target.value)} className="bg-[#090b10] px-1 py-0.5 text-sm text-white">
+              {["📍", "⭐", "🚀", "🔥", "✅", "⚠️", "💡", "❤️"].map((emoji) => <option key={emoji} value={emoji}>{emoji}</option>)}
+            </select>
+          </label>
         </section>
       )}
 
@@ -697,26 +798,32 @@ export default function ChartPanel() {
             <EnhancedChart
               timeframe={active}
               replayOffset={replayOffset}
-              indicatorConfig={advancedIndicators}
+              indicatorConfig={visibleAdvancedIndicators}
               drawingTool={drawingTool}
               magnetEnabled={magnetEnabled}
               drawingsVisible={drawingsVisible}
               drawingsLocked={drawingsLocked}
               clearDrawingsKey={clearDrawingsKey}
               undoDrawingsKey={undoDrawingsKey}
+              emojiChoice={emojiChoice}
+              onDrawingComplete={completeDrawing}
+              onToolCancel={() => setDrawingTool("crosshair")}
               chartType={chartType}
               exchange={activeExchange}
             />
           ) : (
             <CandlestickChart
               timeframe={active}
-              indicators={indicators}
+              indicators={visibleIndicators}
               drawingTool={drawingTool}
               magnetEnabled={magnetEnabled}
               drawingsVisible={drawingsVisible}
               drawingsLocked={drawingsLocked}
               clearDrawingsKey={clearDrawingsKey}
               undoDrawingsKey={undoDrawingsKey}
+              emojiChoice={emojiChoice}
+              onDrawingComplete={completeDrawing}
+              onToolCancel={() => setDrawingTool("crosshair")}
               exchange={activeExchange}
               replayOffset={replayOffset}
             />
