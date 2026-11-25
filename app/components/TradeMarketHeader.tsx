@@ -1,116 +1,159 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown, Search, X } from "lucide-react";
 import { useMarket } from "@/contexts/MarketContext";
 import { useNetwork } from "@/contexts/WalletProvider";
 import { usePaperTrading } from "@/contexts/PaperTradingContext";
 import { useOracle } from "@/hooks/useOracle";
+import CoinIcon from "./CoinIcon";
 
 function money(value: number | null | undefined) {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  if (value === null || value === undefined || !Number.isFinite(value) || value <= 0) return "—";
   return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 export default function TradeMarketHeader() {
-  const { market } = useMarket();
+  const { market, markets, setMarket } = useMarket();
   const { network } = useNetwork();
   const { isPaperTrading } = usePaperTrading();
   const oracle = useOracle();
-  const change = market?.change24h ?? 0;
-  const changeUp = change >= 0;
-  const environmentLabel = isPaperTrading
-    ? "Paper · Devnet"
-    : network === "devnet"
-      ? "Devnet"
-      : "Mainnet";
-  const compactEnvironmentLabel = isPaperTrading
-    ? "Paper"
-    : network === "devnet"
-      ? "Devnet"
-      : "Mainnet";
+  const [marketMenuOpen, setMarketMenuOpen] = useState(false);
+  const [marketSearch, setMarketSearch] = useState("");
+  const marketSearchRef = useRef<HTMLInputElement>(null);
+  const initialMarketHandled = useRef(false);
+  const change = market?.price ? market.change24h : null;
+  const changeUp = (change ?? 0) >= 0;
+  const env = isPaperTrading ? "Paper · Devnet" : network === "devnet" ? "Devnet" : "Mainnet";
 
-  const environmentBadge = (
-    <span className={`inline-flex shrink-0 items-center gap-1.5 border px-2 py-1 text-[9px] font-mono font-semibold uppercase tracking-wider ${
-      isPaperTrading
-        ? "border-amber-400/30 bg-amber-400/10 text-amber-300"
-        : "border-t-border bg-bg-l2 text-text-muted"
-    }`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${isPaperTrading || network === "devnet" ? "bg-amber-400" : "bg-long"}`} />
-      {environmentLabel}
-    </span>
-  );
+  const stats = [
+    { label: "24h high", value: `$${money(market?.high24h)}` },
+    { label: "24h low", value: `$${money(market?.low24h)}` },
+    { label: "24h volume", value: market?.volume24h || "—" },
+    { label: "Mark price", value: `$${money(oracle?.oraclePrice)}` },
+  ];
+
+  useEffect(() => {
+    if (initialMarketHandled.current || !markets.length) return;
+    if (market?.symbol === "ETH-PERP") {
+      initialMarketHandled.current = true;
+      return;
+    }
+    if (market?.symbol !== "BTC-PERP" || markets.length > 1) {
+      const ethereum = markets.find((item) => item.symbol === "ETH-PERP");
+      if (ethereum && market?.symbol === "BTC-PERP") setMarket(ethereum);
+      initialMarketHandled.current = true;
+    }
+  }, [market?.symbol, markets, setMarket]);
+
+  useEffect(() => {
+    if (!marketMenuOpen) return;
+    marketSearchRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMarketMenuOpen(false);
+        setMarketSearch("");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [marketMenuOpen]);
+
+  const filteredMarkets = markets.filter((item) => {
+    const query = marketSearch.trim().toLowerCase();
+    return !query || item.symbol.toLowerCase().includes(query) || item.symbol.replace(/-perp$/i, "").toLowerCase().includes(query);
+  });
 
   return (
-    <header className="col-span-12 min-w-0 border-b border-t-border bg-bg-surface px-3 py-2 lg:grid lg:h-16 lg:grid-cols-12 lg:items-center lg:px-4 lg:py-0">
-      <div className="flex min-w-0 items-center gap-3 lg:col-span-7 lg:h-full lg:border-r lg:border-t-border">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <div className="hidden h-9 w-9 shrink-0 items-center justify-center border border-t-border bg-bg-l2 font-mono text-xs font-semibold text-primary sm:flex">
-            {market?.symbol?.slice(0, 1) ?? "A"}
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="truncate font-mono text-sm font-semibold tracking-tight text-text-main sm:text-base">
-                {market?.symbol ?? "BTC-PERP"}
-              </h1>
-              <span className="hidden border border-t-border-soft bg-bg-l2 px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider text-text-muted sm:inline-block">
-                Perpetual
-              </span>
+    <header className="trade-market-header col-span-12 min-w-0 border-b border-t-border bg-bg-surface">
+      <div className="trade-market-main relative flex min-w-0 items-center gap-3 px-3 lg:px-4">
+        <button
+          type="button"
+          aria-expanded={marketMenuOpen}
+          aria-controls="trade-market-menu"
+          aria-label="Choose perpetual market"
+          onClick={() => {
+            setMarketMenuOpen((open) => {
+              if (open) setMarketSearch("");
+              return !open;
+            });
+          }}
+          className="flex min-w-0 items-center gap-2.5 text-left hover:bg-bg-l2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+        >
+          <CoinIcon symbol={market?.symbol ?? "ETH-PERP"} size={34} />
+          <span className="min-w-0">
+            <span className="flex items-center gap-1.5">
+              <span className="trade-symbol truncate font-semibold text-sm text-text-main">{market?.symbol ?? "Market"}</span>
+              <span className="hidden border border-t-border-soft bg-bg-l2 px-1 py-0.5 text-[8px] font-mono uppercase tracking-wider text-text-muted sm:inline">Perp</span>
+              <ChevronDown size={14} className="shrink-0 text-text-muted" />
+            </span>
+            <span className="mt-0.5 flex items-center gap-2 font-mono tabular-nums">
+              <span className="trade-price font-semibold text-text-main">${money(market?.price)}</span>
+              <span className={`text-[11px] font-medium ${change === null ? "text-text-muted" : changeUp ? "text-long" : "text-short"}`}>{change === null ? "—" : `${changeUp ? "+" : ""}${change.toFixed(2)}%`}</span>
+            </span>
+          </span>
+        </button>
+        {marketMenuOpen && (
+          <div id="trade-market-menu" className="absolute left-3 top-[calc(100%-2px)] z-40 flex max-h-[min(24rem,calc(100vh-8rem))] w-72 max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden border border-t-border bg-bg-l1 shadow-xl lg:left-4">
+            <div className="flex items-center gap-2 border-b border-t-border px-3 py-2">
+              <Search size={15} className="shrink-0 text-text-muted" aria-hidden="true" />
+              <input
+                ref={marketSearchRef}
+                type="search"
+                value={marketSearch}
+                onChange={(event) => setMarketSearch(event.target.value)}
+                placeholder="Search coins"
+                aria-label="Search perpetual markets"
+                autoComplete="off"
+                className="h-8 min-w-0 flex-1 bg-transparent text-sm text-text-main outline-none placeholder:text-text-muted"
+              />
+              {marketSearch && (
+                <button type="button" aria-label="Clear coin search" onClick={() => { setMarketSearch(""); marketSearchRef.current?.focus(); }} className="shrink-0 text-text-muted hover:text-text-main">
+                  <X size={14} />
+                </button>
+              )}
             </div>
-            <div className="mt-0.5 flex items-baseline gap-2">
-              <span className="font-mono text-lg font-semibold tabular-nums text-text-main sm:text-2xl">
-                ${money(market?.price)}
-              </span>
-              <span className={`font-mono text-[11px] font-medium tabular-nums sm:text-xs ${changeUp ? "text-long" : "text-short"}`}>
-                {changeUp ? "+" : ""}{change.toFixed(2)}%
-              </span>
+            <div className="min-h-0 overflow-y-auto py-1">
+            {filteredMarkets.length > 0 ? filteredMarkets.map((item) => (
+              <button
+                key={item.symbol}
+                type="button"
+                onClick={() => { setMarket(item); setMarketMenuOpen(false); setMarketSearch(""); }}
+                aria-current={item.symbol === market?.symbol ? "true" : undefined}
+                className={`flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-bg-l2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${item.symbol === market?.symbol ? "bg-bg-l2" : ""}`}
+              >
+                <CoinIcon symbol={item.symbol} size={22} />
+                <span className="flex-1 font-medium text-xs text-text-main">{item.symbol}</span>
+                <span className={`font-mono text-[10px] ${item.change24h >= 0 ? "text-long" : "text-short"}`}>{item.change24h >= 0 ? "+" : ""}{item.change24h.toFixed(2)}%</span>
+              </button>
+            )) : (
+              <p className="px-3 py-4 text-center text-xs text-text-muted">No coins match “{marketSearch}”</p>
+            )}
             </div>
           </div>
-          <div className="ml-2 hidden items-center gap-2 border-l border-t-border pl-4 lg:flex">
-            <span className="text-[9px] font-mono uppercase tracking-wider text-text-muted">Mark</span>
-            <span className="font-mono text-xs tabular-nums text-text-main">${money(oracle?.oraclePrice)}</span>
-          </div>
-        </div>
+        )}
 
-        <span className="ml-auto inline-flex shrink-0 items-center gap-1 border border-t-border bg-bg-l2 px-1.5 py-1 text-[8px] font-mono font-semibold uppercase tracking-wider text-text-muted lg:hidden">
-          <span className={`h-1.5 w-1.5 rounded-full ${isPaperTrading || network === "devnet" ? "bg-amber-400" : "bg-long"}`} />
-          {compactEnvironmentLabel}
-        </span>
-      </div>
-
-      <dl className="hidden min-w-0 grid-cols-[repeat(3,minmax(0,1fr))_auto] items-center gap-3 pl-4 lg:col-span-5 lg:grid lg:gap-4">
-        <div className="min-w-0">
-          <dt className="text-[9px] font-mono uppercase tracking-wider text-text-muted">24h high</dt>
-          <dd className="mt-1 truncate font-mono text-xs tabular-nums text-text-main">${money(market?.high24h)}</dd>
-        </div>
-        <div className="min-w-0">
-          <dt className="text-[9px] font-mono uppercase tracking-wider text-text-muted">24h low</dt>
-          <dd className="mt-1 truncate font-mono text-xs tabular-nums text-text-main">${money(market?.low24h)}</dd>
-        </div>
-        <div className="min-w-0">
-          <dt className="text-[9px] font-mono uppercase tracking-wider text-text-muted">24h volume</dt>
-          <dd className="mt-1 truncate font-mono text-xs tabular-nums text-text-main">{market?.volume24h || "—"}</dd>
-        </div>
-        <div>{environmentBadge}</div>
-      </dl>
-
-      <details className="mt-2 border-t border-t-border pt-1.5 lg:hidden">
-        <summary className="cursor-pointer list-none text-[9px] font-mono uppercase tracking-wider text-text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
-          Market stats
-        </summary>
-        <dl className="mt-2 grid grid-cols-3 gap-3 pb-1">
-          <div>
-            <dt className="text-[9px] font-mono uppercase tracking-wider text-text-muted">24h high</dt>
-            <dd className="mt-1 font-mono text-[11px] tabular-nums text-text-main">${money(market?.high24h)}</dd>
-          </div>
-          <div>
-            <dt className="text-[9px] font-mono uppercase tracking-wider text-text-muted">24h low</dt>
-            <dd className="mt-1 font-mono text-[11px] tabular-nums text-text-main">${money(market?.low24h)}</dd>
-          </div>
-          <div>
-            <dt className="text-[9px] font-mono uppercase tracking-wider text-text-muted">24h volume</dt>
-            <dd className="mt-1 truncate font-mono text-[11px] tabular-nums text-text-main">{market?.volume24h || "—"}</dd>
+        <dl className="trade-stat-strip ml-auto min-w-0 flex-1 items-center">
+          {stats.map((stat) => (
+            <div key={stat.label} className="min-w-0 border-l border-t-border px-3">
+              <dt className="truncate text-[9px] uppercase tracking-wide text-text-muted">{stat.label}</dt>
+              <dd className="mt-1 truncate font-mono text-[11px] tabular-nums text-text-main">{stat.value}</dd>
+            </div>
+          ))}
+          <div className="trade-env border-l border-t-border px-3">
+            <dt className="text-[9px] uppercase tracking-wide text-text-muted">Network</dt>
+            <dd className="mt-1 inline-flex items-center gap-1.5 text-[10px] text-text-main"><span className={`h-1.5 w-1.5 rounded-full ${network === "devnet" ? "bg-amber-400" : "bg-long"}`} />{env}</dd>
           </div>
         </dl>
-      </details>
+      </div>
+      <dl className="trade-stat-mobile grid grid-cols-2 border-t border-t-border px-1 py-2">
+        {stats.map((stat) => (
+          <div key={stat.label} className="min-w-0 px-2">
+            <dt className="truncate text-[8px] uppercase tracking-wide text-text-muted">{stat.label}</dt>
+            <dd className="mt-1 truncate font-mono text-[10px] text-text-main">{stat.value}</dd>
+          </div>
+        ))}
+      </dl>
     </header>
   );
 }

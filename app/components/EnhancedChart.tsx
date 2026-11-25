@@ -23,21 +23,40 @@ import * as indicators from "@/lib/indicators";
 import { detectAllPatterns, PatternDetection } from "@/lib/patterns/candlestickPatterns";
 import { Candle } from "@/lib/exchanges/types";
 import type { ExchangeName } from "@/lib/exchanges";
+import ChartDrawingLayer from "./ChartDrawingLayer";
 
 interface Props {
   timeframe?: string;
   indicatorConfig?: AdvancedIndicatorConfig;
   drawingTool?: DrawingTool;
+  magnetEnabled?: boolean;
+  drawingsVisible?: boolean;
+  drawingsLocked?: boolean;
+  clearDrawingsKey?: number;
+  undoDrawingsKey?: number;
+  emojiChoice?: string;
+  onDrawingComplete?: () => void;
+  onToolCancel?: () => void;
   chartType?: 'candlestick' | 'line' | 'area';
   exchange?: ExchangeName;
+  replayOffset?: number;
 }
 
 export default function EnhancedChart({
   timeframe = "15m",
   indicatorConfig,
   drawingTool = "crosshair",
+  magnetEnabled = false,
+  drawingsVisible = true,
+  drawingsLocked = false,
+  clearDrawingsKey = 0,
+  undoDrawingsKey = 0,
+  emojiChoice = "📍",
+  onDrawingComplete = () => undefined,
+  onToolCancel = () => undefined,
   chartType = 'candlestick',
-  exchange = 'binance'
+  exchange = 'binance',
+  replayOffset = 0,
 }: Props) {
   const { market } = useMarket();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -45,8 +64,14 @@ export default function EnhancedChart({
   const mainSeriesRef = useRef<ISeriesApi<SeriesType> | null>(null);
   const indicatorSeriesRef = useRef<Map<string, ISeriesApi<SeriesType>>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
+  const [drawingChart, setDrawingChart] = useState<IChartApi | null>(null);
+  const [drawingSeries, setDrawingSeries] = useState<ISeriesApi<SeriesType> | null>(null);
   const [patterns, setPatterns] = useState<PatternDetection[]>([]);
   const candleDataRef = useRef<Candle[]>([]);
+  const replayOffsetRef = useRef(replayOffset);
+  useEffect(() => {
+    replayOffsetRef.current = replayOffset;
+  }, [replayOffset]);
 
   // Calculate indicator helper
   const calculateSMA = useCallback((data: { time: Time; value: number }[], period: number) => {
@@ -99,6 +124,7 @@ export default function EnhancedChart({
     });
 
     chartRef.current = chart;
+    setDrawingChart(chart);
 
     // Create initial candlestick series
     const series = chart.addSeries(CandlestickSeries, {
@@ -109,6 +135,7 @@ export default function EnhancedChart({
       wickDownColor: "#d85a30",
     });
     mainSeriesRef.current = series;
+    setDrawingSeries(series);
 
     // Resize observer
     const ro = new ResizeObserver((entries) => {
@@ -124,6 +151,8 @@ export default function EnhancedChart({
       chart.remove();
       chartRef.current = null;
       mainSeriesRef.current = null;
+      setDrawingChart(null);
+      setDrawingSeries(null);
       indicatorSeries.clear();
     };
   }, []);
@@ -145,12 +174,14 @@ export default function EnhancedChart({
         wickDownColor: "#d85a30",
       });
       mainSeriesRef.current = series;
+      setDrawingSeries(series);
     } else if (chartType === 'line') {
       const series = chartRef.current.addSeries(LineSeries, {
         color: "#2962FF",
         lineWidth: 2,
       });
       mainSeriesRef.current = series;
+      setDrawingSeries(series);
     } else if (chartType === 'area') {
       const series = chartRef.current.addSeries(AreaSeries, {
         lineColor: "#2962FF",
@@ -159,6 +190,7 @@ export default function EnhancedChart({
         lineWidth: 2,
       });
       mainSeriesRef.current = series;
+      setDrawingSeries(series);
     }
 
     // Re-apply data if available
@@ -180,9 +212,11 @@ export default function EnhancedChart({
   // Update drawing tool mode
   useEffect(() => {
     if (!chartRef.current) return;
-    const mode = drawingTool === "crosshair" ? CrosshairMode.Normal : CrosshairMode.Magnet;
+    const mode = (drawingTool === "crosshair" || drawingTool === "cursor") && !magnetEnabled
+      ? CrosshairMode.Normal
+      : CrosshairMode.Magnet;
     chartRef.current.applyOptions({ crosshair: { mode } });
-  }, [drawingTool]);
+  }, [drawingTool, magnetEnabled]);
 
   const applyIndicators = useCallback((candles: Candle[]) => {
     if (!chartRef.current || !indicatorConfig) return;
@@ -314,15 +348,18 @@ export default function EnhancedChart({
       candleDataRef.current = uniqueWithTime;
 
       if (unique.length > 0) {
+        candleDataRef.current = uniqueWithTime;
+        const end = Math.max(1, uniqueWithTime.length - replayOffsetRef.current);
+        const visible = uniqueWithTime.slice(0, end);
         // Set main series data
         if (chartType === 'candlestick') {
-          mainSeriesRef.current.setData(uniqueWithTime.map((candle) => ({
+          mainSeriesRef.current.setData(visible.map((candle) => ({
             ...candle,
             time: candle.time as Time,
           })));
         } else {
           // For line/area, use close prices
-          const closeData = uniqueWithTime.map(k => ({ time: k.time as Time, value: k.close }));
+          const closeData = visible.map(k => ({ time: k.time as Time, value: k.close }));
           mainSeriesRef.current.setData(closeData);
         }
 
@@ -331,9 +368,12 @@ export default function EnhancedChart({
         setPatterns(detectedPatterns);
 
         // Apply indicators
-        applyIndicators(unique);
+        applyIndicators(visible);
 
-        chartRef.current?.timeScale().fitContent();
+        chartRef.current?.timeScale().setVisibleLogicalRange({
+          from: Math.max(0, visible.length - 140),
+          to: visible.length + 8,
+        });
       }
 
       setIsLoading(false);
@@ -341,6 +381,11 @@ export default function EnhancedChart({
       // Real-time WebSocket updates
       unsubscribeWs = cachedApi.subscribeKlines(market.symbol, timeframe, (candle) => {
         if (!mounted || !mainSeriesRef.current) return;
+
+        const existingIndex = candleDataRef.current.findIndex((item) => item.time === candle.time);
+        if (existingIndex >= 0) candleDataRef.current[existingIndex] = candle;
+        else candleDataRef.current.push(candle);
+        if (replayOffsetRef.current > 0) return;
         
         if (chartType === 'candlestick') {
           mainSeriesRef.current.update({ ...candle, time: candle.time as Time });
@@ -366,6 +411,36 @@ export default function EnhancedChart({
     };
   }, [market?.symbol, timeframe, chartType, exchange]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    const allCandles = candleDataRef.current;
+    if (allCandles.length === 0 || !mainSeriesRef.current || !chartRef.current) return;
+    const end = Math.max(1, allCandles.length - replayOffset);
+    const visible = allCandles.slice(0, end);
+    if (chartType === "candlestick") {
+      mainSeriesRef.current.setData(visible.map((candle) => ({ ...candle, time: candle.time as Time })));
+    } else {
+      mainSeriesRef.current.setData(visible.map((candle) => ({ time: candle.time as Time, value: candle.close })));
+    }
+    applyIndicators(visible);
+    chartRef.current.timeScale().setVisibleLogicalRange({
+      from: Math.max(0, visible.length - 140),
+      to: visible.length + 8,
+    });
+  }, [replayOffset, chartType]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const saveChartImage = () => {
+      const canvas = chartRef.current?.takeScreenshot(true, true);
+      if (!canvas) return;
+      const link = document.createElement("a");
+      link.download = `apex-${market?.symbol ?? "chart"}-${timeframe}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    };
+    window.addEventListener("apex:chart-screenshot", saveChartImage);
+    return () => window.removeEventListener("apex:chart-screenshot", saveChartImage);
+  }, [market?.symbol, timeframe]);
+
   // Apply indicators when config changes
   useEffect(() => {
     if (candleDataRef.current.length > 0 && indicatorConfig) {
@@ -377,6 +452,22 @@ export default function EnhancedChart({
 
   return (
     <div ref={containerRef} style={{ width: "100%", height: "100%", position: "relative" }}>
+      {drawingChart && (
+        <ChartDrawingLayer
+          chart={drawingChart}
+          series={drawingSeries}
+          tool={drawingTool}
+          drawingsVisible={drawingsVisible}
+          drawingsLocked={drawingsLocked}
+          clearKey={clearDrawingsKey}
+          undoKey={undoDrawingsKey}
+          magnetEnabled={magnetEnabled}
+          emojiChoice={emojiChoice}
+          onDrawingComplete={onDrawingComplete}
+          onToolCancel={onToolCancel}
+          timeframe={timeframe}
+        />
+      )}
       {isLoading && (
         <div
           style={{

@@ -16,3 +16,8 @@ cpi = ["no-entrypoint"]
 
 [dependencies]
 solana-program = "2.1.0"
+
+# Use the portable implementation for host tests on Windows, where the default
+# BLAKE3 assembly build expects a 64-bit GCC toolchain.
+[target.'cfg(not(target_os = "solana"))'.dependencies]
+blake3 = { version = "1.5.5", features = ["pure"] }

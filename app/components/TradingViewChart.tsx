@@ -70,9 +70,15 @@ export default function TradingViewChart({
 
   useEffect(() => {
     let cancelled = false;
+    const loadTimeout = setTimeout(() => {
+      if (cancelled) return;
+      setStatus("unavailable");
+      onUnavailable?.();
+    }, 3_000);
 
     void loadLibrary().then((available) => {
       if (cancelled) return;
+      clearTimeout(loadTimeout);
 
       if (!available || !containerRef.current || !window.TradingView?.widget) {
         setStatus("unavailable");
@@ -117,6 +123,7 @@ export default function TradingViewChart({
 
     return () => {
       cancelled = true;
+      clearTimeout(loadTimeout);
       try {
         widgetRef.current?.remove?.();
       } catch {

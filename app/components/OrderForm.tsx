@@ -190,12 +190,13 @@ export default function OrderForm() {
     txStatus === "signing" ||
     txStatus === "submitted" ||
     (!isPaperTrading && (!connected || !publicKey)) ||
+    effectivePrice <= 0 ||
     sizeUsdc <= 0 ||
     marginReq > availableCollateral;
   const explorerCluster = network === "devnet" ? "?cluster=devnet" : "";
 
   return (
-    <section className="col-span-12 lg:col-span-3 min-h-0 min-w-0 b-thin lg:border-l-0 flex flex-col bg-bg-surface p-4 overflow-y-auto no-scrollbar relative">
+    <section className="order-entry-panel col-span-12 lg:col-span-3 xl:col-span-2 min-h-0 min-w-0 b-thin lg:border-l-0 flex flex-col bg-bg-surface overflow-hidden relative">
       {/* Confirmation Modal Overlay */}
       {txStatus === "confirming" && (
         <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm rounded-md">
@@ -245,6 +246,7 @@ export default function OrderForm() {
         </div>
       )}
 
+      <div className="order-entry-fields">
       {/* Long / Short toggle */}
       <div className="mb-4 flex items-center justify-between">
         <div>
@@ -469,8 +471,10 @@ export default function OrderForm() {
           View on Explorer <ExternalLink size={13} />
         </a>
       )}
+      </div>
 
       {/* Action button */}
+      <div className="order-entry-actions">
       <button
         onClick={initiateOrder}
         disabled={isOrderDisabled}
@@ -505,6 +509,7 @@ export default function OrderForm() {
           )}
         </div>
       )}
+      </div>
     </section>
   );
 }
