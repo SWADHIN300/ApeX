@@ -29,15 +29,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <>
       <TopBar
         isSideNavOpen={isNavOpen}
-        onToggleSideNav={() => setIsNavOpen((v) => !v)}
+        onToggleSideNav={() => {
+          if (isMobile && !isNavOpen) setIsNavExpanded(true);
+          setIsNavOpen((v) => !v);
+        }}
       />
       <SideNav
         isOpen={isNavOpen}
         isExpanded={isNavExpanded}
+        isMobile={isMobile}
         onToggleExpand={() => setIsNavExpanded((v) => !v)}
       />
       <main
-        className={`mt-14 h-[calc(100vh-56px)] min-w-0 overflow-auto bg-bg-base transition-[margin-left] duration-300 ${
+        className={`apex-main mt-14 h-[calc(100vh-56px)] min-w-0 overflow-auto bg-bg-base transition-[margin-left] duration-300 ${
           isNavOpen && !isMobile
             ? isNavExpanded
               ? "ml-52"

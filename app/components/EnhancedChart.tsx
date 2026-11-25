@@ -30,6 +30,7 @@ interface Props {
   drawingTool?: DrawingTool;
   chartType?: 'candlestick' | 'line' | 'area';
   exchange?: ExchangeName;
+  replayOffset?: number;
 }
 
 export default function EnhancedChart({
@@ -37,7 +38,8 @@ export default function EnhancedChart({
   indicatorConfig,
   drawingTool = "crosshair",
   chartType = 'candlestick',
-  exchange = 'binance'
+  exchange = 'binance',
+  replayOffset = 0,
 }: Props) {
   const { market } = useMarket();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -47,6 +49,8 @@ export default function EnhancedChart({
   const [isLoading, setIsLoading] = useState(true);
   const [patterns, setPatterns] = useState<PatternDetection[]>([]);
   const candleDataRef = useRef<Candle[]>([]);
+  const replayOffsetRef = useRef(replayOffset);
+  replayOffsetRef.current = replayOffset;
 
   // Calculate indicator helper
   const calculateSMA = useCallback((data: { time: Time; value: number }[], period: number) => {
@@ -314,15 +318,18 @@ export default function EnhancedChart({
       candleDataRef.current = uniqueWithTime;
 
       if (unique.length > 0) {
+        candleDataRef.current = uniqueWithTime;
+        const end = Math.max(1, uniqueWithTime.length - replayOffsetRef.current);
+        const visible = uniqueWithTime.slice(0, end);
         // Set main series data
         if (chartType === 'candlestick') {
-          mainSeriesRef.current.setData(uniqueWithTime.map((candle) => ({
+          mainSeriesRef.current.setData(visible.map((candle) => ({
             ...candle,
             time: candle.time as Time,
           })));
         } else {
           // For line/area, use close prices
-          const closeData = uniqueWithTime.map(k => ({ time: k.time as Time, value: k.close }));
+          const closeData = visible.map(k => ({ time: k.time as Time, value: k.close }));
           mainSeriesRef.current.setData(closeData);
         }
 
@@ -331,9 +338,12 @@ export default function EnhancedChart({
         setPatterns(detectedPatterns);
 
         // Apply indicators
-        applyIndicators(unique);
+        applyIndicators(visible);
 
-        chartRef.current?.timeScale().fitContent();
+        chartRef.current?.timeScale().setVisibleLogicalRange({
+          from: Math.max(0, visible.length - 140),
+          to: visible.length + 8,
+        });
       }
 
       setIsLoading(false);
@@ -341,6 +351,11 @@ export default function EnhancedChart({
       // Real-time WebSocket updates
       unsubscribeWs = cachedApi.subscribeKlines(market.symbol, timeframe, (candle) => {
         if (!mounted || !mainSeriesRef.current) return;
+
+        const existingIndex = candleDataRef.current.findIndex((item) => item.time === candle.time);
+        if (existingIndex >= 0) candleDataRef.current[existingIndex] = candle;
+        else candleDataRef.current.push(candle);
+        if (replayOffsetRef.current > 0) return;
         
         if (chartType === 'candlestick') {
           mainSeriesRef.current.update({ ...candle, time: candle.time as Time });
@@ -365,6 +380,36 @@ export default function EnhancedChart({
       unsubscribeWs?.();
     };
   }, [market?.symbol, timeframe, chartType, exchange]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const allCandles = candleDataRef.current;
+    if (allCandles.length === 0 || !mainSeriesRef.current || !chartRef.current) return;
+    const end = Math.max(1, allCandles.length - replayOffset);
+    const visible = allCandles.slice(0, end);
+    if (chartType === "candlestick") {
+      mainSeriesRef.current.setData(visible.map((candle) => ({ ...candle, time: candle.time as Time })));
+    } else {
+      mainSeriesRef.current.setData(visible.map((candle) => ({ time: candle.time as Time, value: candle.close })));
+    }
+    applyIndicators(visible);
+    chartRef.current.timeScale().setVisibleLogicalRange({
+      from: Math.max(0, visible.length - 140),
+      to: visible.length + 8,
+    });
+  }, [replayOffset, chartType]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const saveChartImage = () => {
+      const canvas = chartRef.current?.takeScreenshot(true, true);
+      if (!canvas) return;
+      const link = document.createElement("a");
+      link.download = `apex-${market?.symbol ?? "chart"}-${timeframe}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    };
+    window.addEventListener("apex:chart-screenshot", saveChartImage);
+    return () => window.removeEventListener("apex:chart-screenshot", saveChartImage);
+  }, [market?.symbol, timeframe]);
 
   // Apply indicators when config changes
   useEffect(() => {

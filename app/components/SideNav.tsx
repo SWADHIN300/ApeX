@@ -50,10 +50,11 @@ const bottomItems: NavItem[] = [
 interface SideNavProps {
   isOpen: boolean;
   isExpanded: boolean;
+  isMobile: boolean;
   onToggleExpand: () => void;
 }
 
-export default function SideNav({ isOpen, isExpanded, onToggleExpand }: SideNavProps) {
+export default function SideNav({ isOpen, isExpanded, isMobile, onToggleExpand }: SideNavProps) {
   const pathname = usePathname();
   const mounted = useClientMounted();
   const { network } = useNetwork();
@@ -103,7 +104,7 @@ export default function SideNav({ isOpen, isExpanded, onToggleExpand }: SideNavP
 
   return (
     <aside
-      className={`fixed left-0 top-14 z-40 h-[calc(100vh-56px)] flex flex-col bg-bg-surface br-thin transition-[transform,width] duration-300 ${
+      className={`apex-sidenav fixed left-0 top-14 z-40 h-[calc(100vh-56px)] flex flex-col bg-bg-surface br-thin transition-[transform,width] duration-300 ${isMobile ? "mobile-nav-visible" : ""} ${isOpen ? "nav-open" : ""} ${
         isOpen
           ? isExpanded
             ? "w-52 translate-x-0"

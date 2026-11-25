@@ -78,10 +78,10 @@ export default function TopBar({
   const pathname = usePathname();
 
   const navItems = [
+    { label: "Markets",    href: "/markets"    },
     { label: "Trade",       href: "/trade"       },
     { label: "Portfolio",   href: "/portfolio"   },
-    { label: "Stats",       href: "/stats"       },
-    { label: "Leaderboard", href: "/leaderboard" },
+    { label: "Analytics",   href: "/stats"       },
   ];
 
   useEffect(() => {
@@ -119,8 +119,9 @@ export default function TopBar({
 
     return () => clearTimeout(timeout);
   }, [marketSymbol, price]);
-  const fmt = (n: number) =>
-    n.toLocaleString("en-US", { minimumFractionDigits: 2 });
+  const fmt = (n: number) => n > 0
+    ? n.toLocaleString("en-US", { minimumFractionDigits: 2 })
+    : "—";
 
   const filteredMarkets = markets.filter((m) =>
     m.symbol.toLowerCase().includes(searchQuery.toLowerCase())
@@ -131,7 +132,7 @@ export default function TopBar({
   return (
     <>
       <header
-        className="fixed top-0 left-0 right-0 z-50 h-14 bb-thin grid grid-cols-[4rem_minmax(0,1fr)_auto] items-center"
+        className={`fixed top-0 left-0 right-0 z-50 h-14 bb-thin grid grid-cols-[4rem_minmax(0,1fr)_auto] items-center ${pathname === "/trade" ? "trade-topbar" : ""}`}
         style={{
           background: "linear-gradient(180deg, var(--bg-l1) 0%, var(--bg-surface) 100%)",
           backdropFilter: "blur(12px)",
@@ -167,7 +168,7 @@ export default function TopBar({
               WebkitTextFillColor: "transparent",
             }}
           >
-            APEX
+            ApeX
           </span>
         </Link>
 
@@ -269,7 +270,7 @@ export default function TopBar({
           </nav>
 
           {/* Market stats (xl+) */}
-          <div className="hidden xl:flex min-w-0 flex-1 items-center gap-5 bl-thin pl-5">
+          <div className="market-context-bar hidden xl:flex min-w-0 flex-1 items-center gap-5 bl-thin pl-5">
             {/* Inline search */}
             <div className="relative flex w-52 shrink-0 items-center">
               <Search size={13} className="absolute left-3 text-text-dim pointer-events-none" />

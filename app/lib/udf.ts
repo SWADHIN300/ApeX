@@ -9,15 +9,18 @@
 import { TIMEFRAME_SECONDS } from "./timeframes";
 
 /** Resolutions advertised to the charting library, in UDF order. */
-export const UDF_RESOLUTIONS = ["1", "5", "15", "60", "240", "1D"] as const;
+export const UDF_RESOLUTIONS = ["1", "3", "5", "15", "30", "60", "240", "1D", "1W"] as const;
 
 const RESOLUTION_TO_TIMEFRAME: Record<string, string> = {
   "1": "1m",
+  "3": "3m",
   "5": "5m",
   "15": "15m",
+  "30": "30m",
   "60": "1h",
   "240": "4h",
   "1D": "1d",
+  "1W": "1w",
   D: "1d",
   "1440": "1d",
 };

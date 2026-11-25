@@ -1,16 +1,8 @@
 "use client";
 
-import { useState } from "react";
 import { useOrderBook } from "@/hooks/useOrderBook";
 import { useMarket } from "@/contexts/MarketContext";
 import type { ExchangeName } from "@/lib/exchanges";
-
-const BOOK_SOURCES: { id: ExchangeName; label: string }[] = [
-  { id: "apex", label: "ApeX" },
-  { id: "binance", label: "Binance" },
-  { id: "coinbase", label: "Coinbase" },
-  { id: "kraken", label: "Kraken" },
-];
 
 const fmtPrice = (p: number) =>
   p.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -26,7 +18,7 @@ interface OrderBookProps {
 }
 
 export default function OrderBook({ onSelectPrice }: OrderBookProps = {}) {
-  const [bookSource, setBookSource] = useState<ExchangeName>("binance");
+  const bookSource: ExchangeName = "binance";
   const { bids, asks, source } = useOrderBook(bookSource);
   const { market } = useMarket();
   const sourceLabel =
@@ -109,16 +101,6 @@ export default function OrderBook({ onSelectPrice }: OrderBookProps = {}) {
             {sourceLabel}
           </span>
         </div>
-        <select
-          aria-label="Order book source"
-          value={bookSource}
-          onChange={(event) => setBookSource(event.target.value as ExchangeName)}
-          className="max-w-24 bg-bg-l2 text-text-main border border-t-border rounded-sm px-1.5 py-1 text-[10px] font-mono outline-none focus:border-accent"
-        >
-          {BOOK_SOURCES.map(({ id, label }) => (
-            <option key={id} value={id}>{label}</option>
-          ))}
-        </select>
       </div>
 
       <div className="flex-grow overflow-hidden flex flex-col" role="table" aria-label="Order Book">
@@ -132,8 +114,9 @@ export default function OrderBook({ onSelectPrice }: OrderBookProps = {}) {
         {/* Asks (highest at top, lowest at bottom touching spread) */}
         <div className="flex-1 overflow-hidden flex flex-col justify-end min-h-[100px]" role="rowgroup">
           {displayAsks.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-[11px] font-mono text-text-dim">
-              No asks
+            <div className="orderbook-empty h-full flex flex-col items-center justify-center gap-1 px-2 text-center text-[11px] font-mono text-text-dim">
+              <span role="status">{source === "unavailable" ? `No ${bookSource} depth data` : `No open asks · ${sourceLabel}`}</span>
+              {source === "unavailable" && <span className="text-[10px] text-text-muted">Market depth is temporarily unavailable.</span>}
             </div>
           ) : (
             displayAsks.map((a, i) => {
@@ -185,11 +168,13 @@ export default function OrderBook({ onSelectPrice }: OrderBookProps = {}) {
               </span>
             )}
           </div>
-          <span className="t-label-caps text-text-muted whitespace-nowrap font-mono text-[10px]">
+          <span className="t-label-caps max-w-[55%] truncate text-right text-text-muted font-mono text-[10px]">
             {sortedAsks.length > 0 && sortedBids.length > 0 && spread >= 0 ? (
               `Spread ${spread.toFixed(2)} (${spreadPct.toFixed(2)}%)`
             ) : (
-              "Spread --"
+              source === "unavailable"
+                ? `24h range ${market?.low24h ? fmtPrice(market.low24h) : "—"}–${market?.high24h ? fmtPrice(market.high24h) : "—"}`
+                : "Spread --"
             )}
           </span>
         </div>
@@ -197,8 +182,9 @@ export default function OrderBook({ onSelectPrice }: OrderBookProps = {}) {
         {/* Bids (highest at top nearest spread, lowest at bottom) */}
         <div className="flex-1 overflow-hidden flex flex-col justify-start min-h-[100px]" role="rowgroup">
           {bidRows.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-[11px] font-mono text-text-dim">
-              No bids
+            <div className="orderbook-empty h-full flex flex-col items-center justify-center gap-1 px-2 text-center text-[11px] font-mono text-text-dim">
+              <span role="status">{source === "unavailable" ? `No ${bookSource} depth data` : `No open bids · ${sourceLabel}`}</span>
+              {source === "unavailable" && <span className="text-[10px] text-text-muted">Market depth is temporarily unavailable.</span>}
             </div>
           ) : (
             bidRows.map((b, i) => {

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useConnection } from "@solana/wallet-adapter-react";
 import { useMarket } from "@/contexts/MarketContext";
-import { subscribeOrderBook } from "@/lib/api";
+import { fetchOrderBook, subscribeOrderBook } from "@/lib/api";
 import {
   fetchProtocolOrderBook,
   getMarketPdas,
@@ -55,12 +55,24 @@ export function useOrderBook(selectedSource: ExchangeName = "apex") {
     /** External exchange depth is context only; ApeX does not execute against it. */
     const startExchangeFeed = () => {
       if (cancelled) return;
+      let receivedStreamUpdate = false;
       cleanupFn = subscribeOrderBook(marketSymbol, (data) => {
         if (cancelled) return;
+        receivedStreamUpdate = true;
         setBids(data.bids);
         setAsks(data.asks);
         setSource(selectedSource);
       }, selectedSource);
+      void fetchOrderBook(marketSymbol, 20, selectedSource)
+        .then((data) => {
+          if (cancelled || receivedStreamUpdate) return;
+          setBids(data.bids);
+          setAsks(data.asks);
+          setSource(data.bids.length || data.asks.length ? selectedSource : "unavailable");
+        })
+        .catch(() => {
+          // Keep the empty state visible if both snapshot and stream are unavailable.
+        });
     };
 
     if (selectedSource !== "apex") {

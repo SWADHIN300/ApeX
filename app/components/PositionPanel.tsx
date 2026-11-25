@@ -53,7 +53,7 @@ export default function PositionPanel({
   return (
     <section
       className={`col-span-12 min-h-0 min-w-0 b-thin border-t-0 bg-bg-surface overflow-hidden transition-[height] duration-300 ${
-        isOpen ? "h-64" : "h-9"
+        isOpen ? "h-full" : "h-9"
       }`}
     >
       {/* Tab row */}

@@ -10,7 +10,6 @@ import { useMarket } from "@/contexts/MarketContext";
 import { exchangeManager, type ExchangeName } from "@/lib/exchanges";
 import {
   LineChart,
-  Paintbrush,
   X,
   Crosshair,
   TrendingUp,
@@ -22,18 +21,26 @@ import {
   Settings,
   ChevronRight,
   Activity,
+  BellRing,
+  Camera,
+  Maximize2,
+  Minimize2,
+  Play,
 } from "lucide-react";
 
-const timeframes = ["1m", "5m", "15m", "1h", "4h", "1d"];
+const timeframes = ["1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"];
 
 /** ApeX timeframe -> TradingView Advanced Charts resolution. */
 const TIMEFRAME_TO_RESOLUTION: Record<string, string> = {
   "1m": "1",
+  "3m": "3",
   "5m": "5",
   "15m": "15",
+  "30m": "30",
   "1h": "60",
   "4h": "240",
   "1d": "1D",
+  "1w": "1W",
 };
 
 export type Indicators = {
@@ -47,10 +54,9 @@ export type ChartType = "candlestick" | "line" | "area";
 
 export default function ChartPanel() {
   const { market } = useMarket();
-  const [active, setActive] = useState("15m");
+  const [active, setActive] = useState("5m");
   const [showIndicators, setShowIndicators] = useState(false);
   const [showAdvancedIndicators, setShowAdvancedIndicators] = useState(false);
-  const [showDrawing, setShowDrawing] = useState(false);
   const [showExchange, setShowExchange] = useState(false);
   const [showChartType, setShowChartType] = useState(false);
   const [indicators, setIndicators] = useState<Indicators>({
@@ -84,15 +90,54 @@ export default function ChartPanel() {
   const [activeExchange, setActiveExchange] = useState(exchangeManager.getActiveExchange());
   const [useEnhancedChart, setUseEnhancedChart] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showAlert, setShowAlert] = useState(false);
+  const [alertPriceInput, setAlertPriceInput] = useState("");
+  const [priceAlert, setPriceAlert] = useState<number | null>(null);
+  const [priceAlertSymbol, setPriceAlertSymbol] = useState<string | null>(null);
+  const [alertDirection, setAlertDirection] = useState<"up" | "down">("up");
+  const [alertNotice, setAlertNotice] = useState("");
+  const [isReplayOpen, setIsReplayOpen] = useState(false);
+  const [replayOffset, setReplayOffset] = useState(0);
+  const panelRef = useRef<HTMLElement>(null);
   // Advanced Charts is used when the licensed library is installed under
   // public/charting_library/. It reports back if it isn't, and we fall through
   // to the bundled lightweight-charts view.
   const [tradingViewAvailable, setTradingViewAvailable] = useState(true);
   const indicatorRef = useRef<HTMLDivElement>(null);
   const advancedIndicatorRef = useRef<HTMLDivElement>(null);
-  const drawingRef = useRef<HTMLDivElement>(null);
   const exchangeRef = useRef<HTMLDivElement>(null);
   const chartTypeRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const syncFullscreenState = () => setIsFullscreen(document.fullscreenElement === panelRef.current);
+    document.addEventListener("fullscreenchange", syncFullscreenState);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreenState);
+  }, []);
+
+  useEffect(() => {
+    if (priceAlert === null || priceAlertSymbol !== market?.symbol || !market?.price || !Number.isFinite(market.price)) return;
+    const crossed = priceAlert > 0 && (alertDirection === "up" ? market.price >= priceAlert : market.price <= priceAlert);
+    if (crossed) {
+      setAlertNotice(`Price reached $${priceAlert.toLocaleString("en-US", { minimumFractionDigits: 2 })}`);
+      setPriceAlert(null);
+      setPriceAlertSymbol(null);
+    }
+  }, [alertDirection, market?.price, market?.symbol, priceAlert, priceAlertSymbol]);
+
+  const toggleFullscreen = async () => {
+    if (!panelRef.current) return;
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await panelRef.current.requestFullscreen();
+    } catch {
+      setAlertNotice("Fullscreen is unavailable in this browser.");
+    }
+  };
+
+  const downloadChartImage = () => {
+    window.dispatchEvent(new CustomEvent("apex:chart-screenshot"));
+  };
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -102,9 +147,6 @@ export default function ChartPanel() {
       }
       if (advancedIndicatorRef.current && !advancedIndicatorRef.current.contains(e.target as Node)) {
         setShowAdvancedIndicators(false);
-      }
-      if (drawingRef.current && !drawingRef.current.contains(e.target as Node)) {
-        setShowDrawing(false);
       }
       if (exchangeRef.current && !exchangeRef.current.contains(e.target as Node)) {
         setShowExchange(false);
@@ -142,18 +184,20 @@ export default function ChartPanel() {
   ];
 
   return (
-    <section className="col-span-12 lg:col-span-7 min-h-[360px] lg:min-h-0 min-w-0 b-thin flex flex-col bg-bg-surface overflow-hidden relative">
+    <section ref={panelRef} className={`chart-panel col-span-12 lg:col-span-7 xl:col-span-8 min-h-[360px] lg:min-h-0 min-w-0 b-thin flex flex-col bg-bg-surface overflow-hidden relative ${isFullscreen ? "chart-panel-fullscreen" : ""}`}>
       {/* Toolbar Overlay */}
-      <div className="absolute top-2 left-2 right-2 flex items-center justify-between gap-2 z-20 pointer-events-none">
+      <div className="chart-toolbar absolute top-2 left-2 right-2 flex items-center justify-between gap-2 z-20 pointer-events-none">
         {/* Left Side: Unified Floating Toolbar */}
-        <div className="flex items-center gap-1.5 bg-bg-l1/90 backdrop-blur-md border border-t-border rounded-sm p-1 pointer-events-auto shadow-sm h-8">
+        <div className="chart-toolbar-group flex items-center gap-1.5 bg-bg-l1/90 backdrop-blur-md border border-t-border rounded-sm p-1 pointer-events-auto shadow-sm h-8">
           {/* Timeframes */}
           <div className="flex items-center gap-0.5">
             {timeframes.map((tf) => (
               <button
                 key={tf}
                 onClick={() => setActive(tf)}
-                className={`h-6 px-2 text-[10px] font-mono tracking-wider font-semibold rounded-sm inline-flex items-center justify-center transition-colors ${
+                aria-pressed={tf === active}
+                title={`${tf} timeframe`}
+                className={`h-7 min-w-8 px-2 text-[11px] font-mono tracking-wider font-semibold rounded-sm inline-flex items-center justify-center transition-colors ${
                   tf === active
                     ? "bg-bg-l4 text-text-main font-bold shadow-xs"
                     : "text-text-dim hover:text-text-main hover:bg-bg-l2"
@@ -167,6 +211,67 @@ export default function ChartPanel() {
           {/* Separator */}
           <div className="w-px h-4 bg-border/60 mx-0.5" />
 
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => { setShowAlert((value) => !value); setAlertNotice(""); }}
+              aria-label="Create price alert"
+              title="Create price alert"
+              className={`h-7 px-2 inline-flex items-center gap-1.5 rounded-sm text-[11px] font-medium transition-colors ${showAlert ? "bg-bg-l4 text-primary" : "text-text-muted hover:bg-bg-l2 hover:text-text-main"}`}
+            >
+              <BellRing size={14} /> <span className="chart-action-label hidden xl:inline">Alert</span>
+            </button>
+            {showAlert && (
+              <form
+                className="absolute left-0 top-full z-50 mt-1 w-56 border border-t-border bg-bg-l1 p-3 shadow-xl"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const nextAlert = Number(alertPriceInput);
+                  if (nextAlert > 0 && Number.isFinite(nextAlert)) {
+                    setAlertDirection(nextAlert >= (market?.price ?? 0) ? "up" : "down");
+                    setPriceAlert(nextAlert);
+                    setPriceAlertSymbol(market?.symbol ?? null);
+                    setAlertNotice(`Alert set at $${nextAlert.toLocaleString("en-US", { minimumFractionDigits: 2 })}`);
+                    setShowAlert(false);
+                  }
+                }}
+              >
+                <label htmlFor="chart-price-alert" className="mb-2 block text-xs font-semibold text-text-main">Alert when {market?.symbol?.replace(/-PERP$/i, "") ?? "market"} reaches</label>
+                <div className="flex gap-2">
+                  <input id="chart-price-alert" type="number" min="0" step="any" required value={alertPriceInput} onChange={(event) => setAlertPriceInput(event.target.value)} placeholder={market?.price ? market.price.toFixed(2) : "Price"} className="h-9 min-w-0 flex-1 border border-t-border bg-bg-base px-2 font-mono text-xs text-text-main" />
+                  <button type="submit" className="h-9 bg-primary px-3 text-xs font-semibold text-primary-foreground">Set</button>
+                </div>
+                {priceAlert !== null && <p className="mt-2 text-[10px] text-text-muted">Active at ${priceAlert.toLocaleString("en-US", { minimumFractionDigits: 2 })}</p>}
+              </form>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsReplayOpen((open) => {
+              if (open) {
+                setReplayOffset(0);
+                return false;
+              }
+              setReplayOffset((offset) => offset || 1);
+              return true;
+            })}
+            aria-pressed={isReplayOpen}
+            title="Replay historical candles"
+            className={`h-7 px-2 inline-flex items-center gap-1.5 rounded-sm text-[11px] font-medium transition-colors ${isReplayOpen ? "bg-bg-l4 text-primary" : "text-text-muted hover:bg-bg-l2 hover:text-text-main"}`}
+          >
+            <Play size={14} /> <span className="chart-action-label hidden xl:inline">Replay</span>
+          </button>
+
+          {isReplayOpen && (
+            <div className="absolute left-2 top-11 z-40 flex w-[min(30rem,calc(100vw-1rem))] items-center gap-3 border border-t-border bg-bg-l1 px-3 py-2 shadow-xl">
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-text-muted">Replay</span>
+              <input type="range" min="0" max="499" value={replayOffset} aria-label="Replay position" onChange={(event) => { const offset = Number(event.target.value); setReplayOffset(offset); if (offset === 0) setIsReplayOpen(false); }} className="min-w-0 flex-1 accent-primary" />
+              <span className="shrink-0 font-mono text-[10px] text-text-muted">{replayOffset ? `${replayOffset} bars back` : "Live"}</span>
+              <button type="button" aria-label="Return to live chart" title="Return to live chart" className="shrink-0 text-text-muted hover:text-text-main" onClick={() => { setReplayOffset(0); setIsReplayOpen(false); }}><X size={14} /></button>
+            </div>
+          )}
+
           {/* Tool Icons */}
           <div className="flex items-center gap-0.5">
             {/* Chart Type Button */}
@@ -175,7 +280,6 @@ export default function ChartPanel() {
                 onClick={() => {
                   setShowChartType((v) => !v);
                   setShowIndicators(false);
-                  setShowDrawing(false);
                   setShowExchange(false);
                   setShowAdvancedIndicators(false);
                 }}
@@ -230,7 +334,6 @@ export default function ChartPanel() {
               <button
                 onClick={() => {
                   setShowIndicators((v) => !v);
-                  setShowDrawing(false);
                   setShowAdvancedIndicators(false);
                   setShowExchange(false);
                   setShowChartType(false);
@@ -287,80 +390,12 @@ export default function ChartPanel() {
               )}
             </div>
 
-            {/* Drawing Tools Button */}
-            <div className="relative" ref={drawingRef}>
-              <button
-                onClick={() => {
-                  setShowDrawing((v) => !v);
-                  setShowIndicators(false);
-                  setShowAdvancedIndicators(false);
-                  setShowExchange(false);
-                  setShowChartType(false);
-                }}
-                className={`h-6 w-6 rounded-sm inline-flex items-center justify-center transition-colors ${
-                  showDrawing || drawingTool !== "crosshair"
-                    ? "text-primary bg-bg-l4"
-                    : "text-text-muted hover:text-text-main hover:bg-bg-l2"
-                }`}
-                aria-label="Drawing tools"
-                title="Drawing tools"
-                type="button"
-              >
-                <Paintbrush size={14} />
-              </button>
-
-              {showDrawing && (
-                <div className="absolute top-full left-0 mt-1 w-48 bg-bg-l1/95 backdrop-blur-sm border border-t-border shadow-xl z-50 rounded-sm">
-                  <div className="flex items-center justify-between px-3 py-2 bb-thin">
-                    <span className="t-label-caps text-text-muted">Drawing Tools</span>
-                    <button
-                      onClick={() => setShowDrawing(false)}
-                      className="text-text-dim hover:text-text-main"
-                    >
-                      <X size={13} />
-                    </button>
-                  </div>
-                  {drawingTools.map(({ id, label, icon }) => (
-                    <button
-                      key={id}
-                      onClick={() => {
-                        setDrawingTool(id);
-                        setShowDrawing(false);
-                      }}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors ${
-                        drawingTool === id
-                          ? "bg-bg-l4 text-primary"
-                          : "hover:bg-bg-l2 text-text-main"
-                      }`}
-                    >
-                      <span className="shrink-0">{icon}</span>
-                      <span className="t-body-sm flex-1 text-left">{label}</span>
-                      {drawingTool === id && (
-                        <Check size={12} className="text-primary" />
-                      )}
-                    </button>
-                  ))}
-                  {drawingTool !== "crosshair" && (
-                    <div className="px-3 py-2 bt-thin">
-                      <button
-                        onClick={() => setDrawingTool("crosshair")}
-                        className="w-full text-center t-label-caps text-text-muted hover:text-short transition-colors"
-                      >
-                        Clear Drawing Mode
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
             {/* Advanced Indicators Settings Button */}
             <div className="relative" ref={advancedIndicatorRef}>
               <button
                 onClick={() => {
                   setShowAdvancedIndicators((v) => !v);
                   setShowIndicators(false);
-                  setShowDrawing(false);
                   setShowExchange(false);
                   setShowChartType(false);
                 }}
@@ -405,6 +440,13 @@ export default function ChartPanel() {
                 <Activity size={14} />
               </button>
             </div>
+
+            <button type="button" onClick={downloadChartImage} aria-label="Download chart image" title="Download chart image" className="h-7 w-7 rounded-sm inline-flex items-center justify-center text-text-muted hover:bg-bg-l2 hover:text-text-main">
+              <Camera size={14} />
+            </button>
+            <button type="button" onClick={() => void toggleFullscreen()} aria-label={isFullscreen ? "Exit full screen" : "Enter full screen"} title={isFullscreen ? "Exit full screen" : "Enter full screen"} className="h-7 w-7 rounded-sm inline-flex items-center justify-center text-text-muted hover:bg-bg-l2 hover:text-text-main">
+              {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            </button>
           </div>
 
           {/* Separator */}
@@ -416,7 +458,6 @@ export default function ChartPanel() {
               onClick={() => {
                 setShowExchange((v) => !v);
                 setShowIndicators(false);
-                setShowDrawing(false);
                 setShowAdvancedIndicators(false);
                 setShowChartType(false);
               }}
@@ -464,9 +505,10 @@ export default function ChartPanel() {
             )}
           </div>
         </div>
+        <span className="chart-toolbar-cue" aria-hidden="true"><ChevronRight size={14} /></span>
 
         {/* Right Side: Symbol, Reference Feed Label, and OHLC Box */}
-        <div className="h-8 px-2.5 bg-bg-l1/90 backdrop-blur-md border border-t-border rounded-sm flex items-center gap-2 text-xs shadow-sm max-w-full truncate pointer-events-auto">
+        <div className="chart-ohlc-box h-8 px-2.5 bg-bg-l1/90 backdrop-blur-md border border-t-border rounded-sm flex items-center gap-2 text-xs shadow-sm max-w-full truncate pointer-events-auto">
           <span className="t-label-caps text-text-muted whitespace-nowrap">
             {market?.symbol}
           </span>
@@ -481,6 +523,22 @@ export default function ChartPanel() {
           </span>
         </div>
       </div>
+
+      <aside aria-label="Chart drawing tools" className="chart-drawing-rail absolute bottom-3 left-1 top-12 z-10 flex w-9 flex-col items-center gap-1 border border-t-border bg-bg-l1/90 py-1 backdrop-blur-sm">
+        {drawingTools.map(({ id, label, icon }) => (
+          <button
+            key={id}
+            type="button"
+            aria-label={label}
+            aria-pressed={drawingTool === id}
+            title={label}
+            onClick={() => setDrawingTool(id)}
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-sm transition-colors ${drawingTool === id ? "bg-primary/15 text-primary" : "text-text-muted hover:bg-bg-l2 hover:text-text-main"}`}
+          >
+            {icon}
+          </button>
+        ))}
+      </aside>
 
       {/* Drawing mode indicator bar */}
       {drawingTool !== "crosshair" && (
@@ -498,8 +556,15 @@ export default function ChartPanel() {
         </div>
       )}
 
+      {alertNotice && (
+        <div role="status" className="absolute bottom-3 left-3 z-30 border border-primary/40 bg-bg-l1/95 px-3 py-2 text-xs text-text-main shadow-lg">
+          <span>{alertNotice}</span>
+          <button type="button" aria-label="Dismiss chart alert" className="ml-3 text-text-muted hover:text-text-main" onClick={() => setAlertNotice("")}><X size={12} className="inline" /></button>
+        </div>
+      )}
+
       {/* Chart area */}
-      <div className="flex-grow relative bg-bg-base overflow-hidden" style={{ minHeight: 300 }}>
+      <div className="chart-canvas-area flex-grow relative bg-bg-base overflow-hidden" style={{ minHeight: 300 }}>
         {/* Advanced Charts renders ApeX's own candles via /api/udf when the
             licensed library is present; otherwise it stays out of the way. */}
         {tradingViewAvailable && activeExchange === "apex" && market?.symbol && (
@@ -515,6 +580,7 @@ export default function ChartPanel() {
           (chartType !== 'candlestick' || Object.values(advancedIndicators).some(v => v === true && typeof v === 'boolean')) ? (
             <EnhancedChart
               timeframe={active}
+              replayOffset={replayOffset}
               indicatorConfig={advancedIndicators}
               drawingTool={drawingTool}
               chartType={chartType}
@@ -526,6 +592,7 @@ export default function ChartPanel() {
               indicators={indicators}
               drawingTool={drawingTool}
               exchange={activeExchange}
+              replayOffset={replayOffset}
             />
           ))}
       </div>

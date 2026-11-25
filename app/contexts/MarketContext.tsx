@@ -10,14 +10,15 @@ type MarketContextType = {
   isLoading: boolean;
 };
 
-// Fallback initial market
+// Start the trade experience on the instrument shown in the default dashboard.
+// Zero values explicitly mean that live ticker data has not arrived yet.
 const FALLBACK_MARKET: Ticker = {
-  symbol: "BTC-PERP",
-  price: 65000,
+  symbol: "ETH-PERP",
+  price: 0,
   change24h: 0,
-  volume24h: "0M",
-  high24h: 66000,
-  low24h: 64000,
+  volume24h: "—",
+  high24h: 0,
+  low24h: 0,
 };
 
 const MarketContext = createContext<MarketContextType | undefined>(undefined);
@@ -38,8 +39,8 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
           const parsed = JSON.parse(cached);
           if (parsed && parsed.length > 0) {
             setMarkets(parsed);
-            const btc = parsed.find((m: Ticker) => m.symbol === "BTC-PERP") || parsed[0];
-            setMarket((previous) => previous.symbol === "BTC-PERP" ? btc : previous);
+            const initialMarket = parsed.find((m: Ticker) => m.symbol === FALLBACK_MARKET.symbol) || parsed[0];
+            setMarket((previous) => previous.symbol === FALLBACK_MARKET.symbol ? initialMarket : previous);
             setIsLoading(false);
           }
         }
@@ -54,8 +55,8 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         if (data && data.length > 0) {
           setMarkets(data);
           setMarket((prev) => {
-            if (prev.symbol === "BTC-PERP") {
-              return data.find((m) => m.symbol === "BTC-PERP") || data[0];
+            if (prev.symbol === FALLBACK_MARKET.symbol) {
+              return data.find((m) => m.symbol === FALLBACK_MARKET.symbol) || data[0];
             }
             return prev;
           });

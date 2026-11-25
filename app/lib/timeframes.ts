@@ -8,11 +8,14 @@
 /** Timeframes the terminal exposes, mapped to their length in seconds. */
 export const TIMEFRAME_SECONDS: Record<string, number> = {
   "1m": 60,
+  "3m": 3 * 60,
   "5m": 5 * 60,
   "15m": 15 * 60,
+  "30m": 30 * 60,
   "1h": 60 * 60,
   "4h": 4 * 60 * 60,
   "1d": 24 * 60 * 60,
+  "1w": 7 * 24 * 60 * 60,
 };
 
 export const SUPPORTED_TIMEFRAMES = Object.keys(TIMEFRAME_SECONDS);

@@ -61,25 +61,25 @@
 }
 
 .dark {
-  --background: oklch(0.1448 0 0);
-  --foreground: oklch(0.9851 0 0);
-  --card: oklch(0.2134 0 0);
-  --card-foreground: oklch(0.9851 0 0);
-  --popover: oklch(0.2686 0 0);
-  --popover-foreground: oklch(0.9851 0 0);
-  --primary: oklch(0.5555 0 0);
+  --background: #090b12;
+  --foreground: #f1f3fa;
+  --card: #0e1119;
+  --card-foreground: #f1f3fa;
+  --popover: #131722;
+  --popover-foreground: #f1f3fa;
+  --primary: #7657ff;
   --primary-foreground: oklch(0.9851 0 0);
-  --secondary: oklch(0.2686 0 0);
-  --secondary-foreground: oklch(0.9851 0 0);
-  --muted: oklch(0.2686 0 0);
-  --muted-foreground: oklch(0.7090 0 0);
-  --accent: oklch(0.3715 0 0);
-  --accent-foreground: oklch(0.9851 0 0);
+  --secondary: #171b27;
+  --secondary-foreground: #f1f3fa;
+  --muted: #171b27;
+  --muted-foreground: #9ba3b7;
+  --accent: #222839;
+  --accent-foreground: #f1f3fa;
   --destructive: oklch(0.7022 0.1892 22.2279);
   --destructive-foreground: oklch(0.2686 0 0);
-  --border: oklch(0.3407 0 0);
-  --input: oklch(0.4386 0 0);
-  --ring: oklch(0.5555 0 0);
+  --border: #252b3a;
+  --input: #343c50;
+  --ring: #7657ff;
   --chart-1: oklch(0.5555 0 0);
   --chart-2: oklch(0.5555 0 0);
   --chart-3: oklch(0.5555 0 0);
@@ -202,6 +202,183 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Trade terminal composition */
+.trade-terminal {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+.trade-market-header { grid-row: 1; }
+.trade-market-main { height: 100%; }
+.trade-stat-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.trade-stat-mobile { display: none; }
+.chart-toolbar-cue { display: none; }
+.chart-toolbar-group {
+  min-width: 0;
+  max-width: calc(100% - 11rem);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.chart-toolbar-group::-webkit-scrollbar { display: none; }
+.chart-toolbar-group > div { flex-shrink: 0; }
+.chart-panel:fullscreen,
+.chart-panel-fullscreen {
+  width: 100vw;
+  height: 100vh;
+  min-height: 100vh;
+  max-width: none;
+  border: 0;
+  background: var(--background);
+}
+.chart-panel:fullscreen .chart-drawing-rail,
+.chart-panel-fullscreen .chart-drawing-rail { top: 3.5rem; }
+.chart-panel:fullscreen .chart-action-label,
+.chart-panel-fullscreen .chart-action-label { display: inline !important; }
+.chart-panel:fullscreen .chart-canvas-area,
+.chart-panel-fullscreen .chart-canvas-area { flex: 1 1 auto; min-height: 0; }
+.trade-status-bar { grid-row: 4; }
+.trade-topbar { grid-template-columns: 10rem minmax(0, 1fr) auto; }
+.trade-topbar > a:first-child {
+  width: 10rem;
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 0.625rem;
+  padding-inline: 1.25rem;
+}
+.trade-topbar > a:first-child span {
+  background: none !important;
+  color: var(--foreground);
+  font-size: 20px !important;
+  letter-spacing: -0.02em !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+.trade-topbar .market-context-bar { display: none !important; }
+.trade-topbar nav a {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.trade-terminal .t-label-caps {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.trade-terminal .t-data-sm { font-size: 11px; }
+.trade-terminal button {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 12px;
+}
+.trade-terminal :is(th, dt) {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 11px;
+}
+.trade-terminal :is(h2, h3) { font-family: ui-sans-serif, system-ui, sans-serif; }
+.trade-stat-strip dd { font-size: 12px; }
+.trade-symbol { font-size: 15px; }
+.trade-market-header .trade-price { font-size: 23px; }
+.order-entry-fields {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 0.75rem;
+}
+.order-entry-actions {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 auto;
+  padding: 0.625rem 0.75rem 0.75rem;
+  border-top: 1px solid var(--border);
+  background: var(--card);
+}
+.order-entry-actions > button:first-child { min-height: 44px; }
+.trade-terminal > section:nth-of-type(1),
+.trade-terminal > section:nth-of-type(2),
+.trade-terminal > section:nth-of-type(3) {
+  min-height: 0;
+}
+
+@media (max-width: 1023px) {
+  .trade-terminal {
+    height: auto;
+    min-height: 100%;
+    grid-template-rows: auto;
+    overflow: visible;
+  }
+  .trade-market-main { height: auto; min-height: 64px; }
+  .trade-stat-strip { display: none; }
+  .trade-stat-mobile { display: grid; }
+  .trade-terminal > section:nth-of-type(1) { min-height: 440px; }
+  .trade-terminal > section:nth-of-type(2) { min-height: 340px; }
+  .trade-terminal > section:nth-of-type(3) { min-height: 440px; }
+  .trade-terminal > section:last-of-type { min-height: 180px; }
+  .trade-status-bar { min-height: 32px; }
+  .apex-main { margin-left: 0 !important; }
+  .apex-sidenav {
+    width: 0 !important;
+    transform: translateX(-100%) !important;
+    border: 0 !important;
+    box-shadow: none;
+  }
+  .apex-sidenav.mobile-nav-visible.nav-open {
+    width: min(16rem, 85vw) !important;
+    transform: translateX(0) !important;
+    border-right: 1px solid var(--border) !important;
+    box-shadow: 16px 0 32px rgba(0, 0, 0, 0.42);
+  }
+  .apex-sidenav.mobile-nav-visible.nav-open a > span:first-of-type {
+    width: auto;
+    opacity: 1;
+  }
+  .chart-toolbar { justify-content: flex-start; }
+  .chart-toolbar-group {
+    position: relative;
+    max-width: calc(100% - 1rem);
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  .trade-market-main { min-height: 72px; }
+  .trade-stat-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .trade-stat-strip .trade-env,
+  .trade-stat-mobile { display: none; }
+}
+
+@media (max-width: 639px) {
+  .trade-topbar { grid-template-columns: 4rem minmax(0, 1fr) auto; }
+  .trade-topbar > a:first-child {
+    width: 4rem;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.125rem;
+    padding-inline: 0;
+  }
+  .trade-topbar > a:first-child span { font-size: 8px !important; letter-spacing: 0.08em !important; }
+  .chart-ohlc-box { display: none; }
+  .chart-toolbar-group { padding-right: 1.5rem; }
+  .chart-toolbar-cue {
+    position: absolute;
+    z-index: 5;
+    top: 0;
+    right: 0;
+    display: flex;
+    height: 2rem;
+    width: 1.5rem;
+    align-items: center;
+    justify-content: center;
+    color: var(--foreground);
+    background: linear-gradient(90deg, transparent, var(--popover) 45%);
+    pointer-events: none;
+  }
+  .trade-stat-mobile { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 0.5rem; }
+  .trade-market-header .trade-price { font-size: 20px; }
+  .trade-status-bar { padding-inline: 0.5rem; }
 }
 
 /* ─── Scrollbar ─── */
