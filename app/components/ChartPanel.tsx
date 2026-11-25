@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import CandlestickChart from "./CandlestickChart";
 import EnhancedChart from "./EnhancedChart";
 import TradingViewChart from "./TradingViewChart";
 import AdvancedIndicators, { AdvancedIndicatorConfig } from "./AdvancedIndicators";
 import AdvancedAnalyticsPanel from "./AdvancedAnalyticsPanel";
 import { useMarket } from "@/contexts/MarketContext";
-import { exchangeManager, type ExchangeName } from "@/lib/exchanges";
+import type { ExchangeName } from "@/lib/exchanges";
 import {
   LineChart,
   X,
@@ -93,12 +94,19 @@ export type DrawingTool =
   | "measure" | "zoom";
 export type ChartType = "candlestick" | "line" | "area";
 
-export default function ChartPanel() {
+interface ChartPanelProps {
+  activeExchange: ExchangeName;
+  onExchangeChange: (exchange: ExchangeName) => void;
+}
+
+export default function ChartPanel({ activeExchange, onExchangeChange }: ChartPanelProps) {
   const { market } = useMarket();
   const [active, setActive] = useState("5m");
   const [showIndicators, setShowIndicators] = useState(false);
   const [showAdvancedIndicators, setShowAdvancedIndicators] = useState(false);
   const [showExchange, setShowExchange] = useState(false);
+  const [exchangeMenuPosition, setExchangeMenuPosition] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [exchangeMenuPortal, setExchangeMenuPortal] = useState<HTMLElement | null>(null);
   const [showChartType, setShowChartType] = useState(false);
   const [indicators, setIndicators] = useState<Indicators>({
     sma20: true,
@@ -128,7 +136,6 @@ export default function ChartPanel() {
   });
   const [drawingTool, setDrawingTool] = useState<DrawingTool>("crosshair");
   const [chartType, setChartType] = useState<ChartType>("candlestick");
-  const [activeExchange, setActiveExchange] = useState(exchangeManager.getActiveExchange());
   const [useEnhancedChart, setUseEnhancedChart] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -158,7 +165,34 @@ export default function ChartPanel() {
   const indicatorRef = useRef<HTMLDivElement>(null);
   const advancedIndicatorRef = useRef<HTMLDivElement>(null);
   const exchangeRef = useRef<HTMLDivElement>(null);
+  const exchangeButtonRef = useRef<HTMLButtonElement>(null);
+  const exchangeMenuRef = useRef<HTMLDivElement>(null);
   const chartTypeRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showExchange) return;
+
+    const updatePosition = () => {
+      const button = exchangeButtonRef.current;
+      if (!button) return;
+      const rect = button.getBoundingClientRect();
+      const width = Math.min(192, window.innerWidth - 16);
+      setExchangeMenuPosition({
+        top: rect.bottom + 6,
+        left: Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)),
+        width,
+      });
+    };
+
+    const animationFrame = window.requestAnimationFrame(updatePosition);
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [showExchange]);
 
   useEffect(() => {
     const syncFullscreenState = () => setIsFullscreen(document.fullscreenElement === panelRef.current);
@@ -210,7 +244,12 @@ export default function ChartPanel() {
       if (advancedIndicatorRef.current && !advancedIndicatorRef.current.contains(e.target as Node)) {
         setShowAdvancedIndicators(false);
       }
-      if (exchangeRef.current && !exchangeRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        exchangeRef.current &&
+        !exchangeRef.current.contains(target) &&
+        !exchangeMenuRef.current?.contains(target)
+      ) {
         setShowExchange(false);
       }
       if (chartTypeRef.current && !chartTypeRef.current.contains(e.target as Node)) {
@@ -595,8 +634,20 @@ export default function ChartPanel() {
           {/* Exchange Selector Button */}
           <div className="relative" ref={exchangeRef}>
             <button
+              ref={exchangeButtonRef}
+              type="button"
+              aria-expanded={showExchange}
+              aria-controls="chart-exchange-menu"
               onClick={() => {
-                setShowExchange((v) => !v);
+                if (showExchange) {
+                  setShowExchange(false);
+                  setExchangeMenuPosition(null);
+                  setExchangeMenuPortal(null);
+                } else {
+                  setExchangeMenuPosition(null);
+                  setExchangeMenuPortal(isFullscreen ? panelRef.current : document.body);
+                  setShowExchange(true);
+                }
                 setShowIndicators(false);
                 setShowAdvancedIndicators(false);
                 setShowChartType(false);
@@ -611,38 +662,6 @@ export default function ChartPanel() {
                 }`}
               />
             </button>
-
-            {showExchange && (
-              <div className="absolute top-full left-0 mt-1 w-40 bg-bg-l1/95 backdrop-blur-sm border border-t-border shadow-xl z-50 rounded-sm">
-                <div className="flex items-center justify-between px-3 py-2 bb-thin">
-                  <span className="t-label-caps text-text-muted">Exchange</span>
-                  <button
-                    onClick={() => setShowExchange(false)}
-                    className="text-text-dim hover:text-text-main"
-                  >
-                    <X size={13} />
-                  </button>
-                </div>
-                {exchanges.map(({ id, label }) => (
-                  <button
-                    key={id}
-                    onClick={() => {
-                      setActiveExchange(id);
-                      exchangeManager.setActiveExchange(id);
-                      setShowExchange(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-3 py-2.5 transition-colors ${
-                      activeExchange === id
-                        ? "bg-bg-l4 text-primary"
-                        : "hover:bg-bg-l2 text-text-main"
-                    }`}
-                  >
-                    <span className="t-body-sm">{label}</span>
-                    {activeExchange === id && <Check size={12} className="text-primary" />}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         </div>
         <span className="chart-toolbar-cue" aria-hidden="true"><ChevronRight size={14} /></span>
@@ -675,6 +694,61 @@ export default function ChartPanel() {
           </span>
         </div>
       </div>
+
+      {showExchange && exchangeMenuPosition && exchangeMenuPortal && createPortal(
+        <div
+          ref={exchangeMenuRef}
+          id="chart-exchange-menu"
+          role="menu"
+          className="rounded-sm border border-t-border bg-bg-l1/95 shadow-xl backdrop-blur-sm"
+          style={{
+            position: "fixed",
+            top: exchangeMenuPosition.top,
+            left: exchangeMenuPosition.left,
+            width: exchangeMenuPosition.width,
+            zIndex: 1100,
+          }}
+        >
+          <div className="flex items-center justify-between px-3 py-2 bb-thin">
+            <span className="t-label-caps text-text-muted">Exchange</span>
+            <button
+              type="button"
+              onClick={() => {
+                setShowExchange(false);
+                setExchangeMenuPosition(null);
+                setExchangeMenuPortal(null);
+              }}
+              className="text-text-dim hover:text-text-main"
+              aria-label="Close exchange menu"
+            >
+              <X size={13} />
+            </button>
+          </div>
+          {exchanges.map(({ id, label }) => (
+            <button
+              key={id}
+              type="button"
+              role="menuitemradio"
+              aria-checked={activeExchange === id}
+              onClick={() => {
+                onExchangeChange(id);
+                setShowExchange(false);
+                setExchangeMenuPosition(null);
+                setExchangeMenuPortal(null);
+              }}
+              className={`w-full flex items-center justify-between px-3 py-2.5 transition-colors ${
+                activeExchange === id
+                  ? "bg-bg-l4 text-primary"
+                  : "hover:bg-bg-l2 text-text-main"
+              }`}
+            >
+              <span className="t-body-sm">{label}</span>
+              {activeExchange === id && <Check size={12} className="text-primary" />}
+            </button>
+          ))}
+        </div>,
+        exchangeMenuPortal,
+      )}
 
       {isFullscreen && (
         <aside aria-label="Chart drawing tools" className="chart-drawing-rail absolute bottom-2 left-0 top-11 z-20 flex w-12 flex-col items-center gap-1 overflow-y-auto border-r border-t-border bg-[#0b0d12] py-1.5">
